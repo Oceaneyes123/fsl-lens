@@ -1,0 +1,54 @@
+export type SampleQualityStatus = "clean" | "low_quality" | "rejected";
+
+export type SampleQualityInput = {
+  detectedHandCount: number;
+  expectedHandCount: number;
+  detectorConfidence: number;
+  landmarksVisible: boolean;
+  insideGuideFrame: boolean;
+  steady: boolean;
+};
+
+export type SampleQualityResult = {
+  status: SampleQualityStatus;
+  reasons: string[];
+};
+
+const cleanConfidence = 0.8;
+const rejectConfidence = 0.6;
+
+export function validateSampleQuality(input: SampleQualityInput): SampleQualityResult {
+  const reasons: string[] = [];
+
+  if (input.detectedHandCount !== input.expectedHandCount) {
+    return {
+      status: "rejected",
+      reasons: [`Expected ${input.expectedHandCount} hand(s), detected ${input.detectedHandCount}.`],
+    };
+  }
+
+  if (!input.landmarksVisible) {
+    return { status: "rejected", reasons: ["Required hand landmarks are not visible."] };
+  }
+
+  if (input.detectorConfidence < rejectConfidence) {
+    return { status: "rejected", reasons: ["Detector confidence is below 60%."] };
+  }
+
+  if (input.detectorConfidence < cleanConfidence) {
+    reasons.push("Detector confidence is below 80%.");
+  }
+
+  if (!input.insideGuideFrame) {
+    reasons.push("Hand is outside the ideal camera area.");
+  }
+
+  if (!input.steady) {
+    reasons.push("Hold the sign steady before capturing.");
+  }
+
+  return {
+    status: reasons.length === 0 ? "clean" : "low_quality",
+    reasons,
+  };
+}

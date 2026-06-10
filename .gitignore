@@ -1,0 +1,8 @@
+.next
+node_modules
+dist
+coverage
+.env*.local
+!.env.local
+dev-server*.log
+output/playwright
