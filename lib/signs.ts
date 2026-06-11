@@ -1,4 +1,4 @@
-export type SignType = "alphabet" | "number";
+export type SignType = "alphabet" | "number" | "word";
 
 export type Sign = {
   id: string;
@@ -39,6 +39,23 @@ export const signs: Sign[] = [...alphabetSigns, ...numberSigns];
 
 export function getSignByLabel(label: string): Sign | undefined {
   return signs.find((sign) => sign.label === label);
+}
+
+export function createWordSign(value: string): Sign {
+  const displayName = toTitleCase(value);
+  const slug = displayName.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+  const label = `word_${slug}`;
+
+  return {
+    id: label,
+    label,
+    displayName,
+    type: "word",
+    expectedHandCount: 1,
+    referenceImageUrl: "",
+    shortInstruction: `Sign the word ${displayName} and keep your hand steady inside the guide frame.`,
+    commonMistakes: "Keep the full word sign clear and steady before capturing.",
+  };
 }
 
 export function formatPredictedSign(label: string | null): { value: string; type: string } {

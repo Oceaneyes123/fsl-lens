@@ -21,7 +21,6 @@ export function SignLibrary() {
       <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
         <div>
           <h1 className="text-2xl font-semibold text-ink">Learn Library</h1>
-          <p className="mt-1 text-sm text-slate-600">Browse the 37 MVP signs for alphabet and numbers 0-10.</p>
         </div>
         <div className="relative w-full lg:w-80">
           <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-slate-500" aria-hidden="true" />
@@ -64,7 +63,6 @@ export function SignLibrary() {
               </div>
             </div>
             <p className="mt-3 text-sm leading-6 text-slate-700">{sign.shortInstruction}</p>
-            <p className="mt-2 text-sm leading-6 text-coral">{sign.commonMistakes}</p>
           </article>
         ))}
       </div>

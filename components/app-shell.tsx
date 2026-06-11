@@ -20,7 +20,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </span>
             <span>
               <span className="block text-xl font-semibold leading-6 text-ink">FSL Lens</span>
-              <span className="text-sm text-slate-600">Filipino Sign Language</span>
             </span>
           </Link>
 

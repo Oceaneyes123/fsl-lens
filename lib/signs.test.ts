@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alphabetSigns, formatPredictedSign, getSignByLabel, numberSigns, signs } from "./signs";
+import { alphabetSigns, createWordSign, formatPredictedSign, getSignByLabel, numberSigns, signs } from "./signs";
 
 describe("sign catalog", () => {
   it("contains 26 alphabet signs and 11 number signs", () => {
@@ -38,6 +38,21 @@ describe("formatPredictedSign", () => {
     expect(formatPredictedSign(null)).toEqual({
       value: "Unknown",
       type: "Predicted sign",
+    });
+  });
+});
+
+describe("createWordSign", () => {
+  it("creates a stable word sign from typed text", () => {
+    expect(createWordSign(" Thank you ")).toEqual({
+      id: "word_thank_you",
+      label: "word_thank_you",
+      displayName: "Thank You",
+      type: "word",
+      expectedHandCount: 1,
+      referenceImageUrl: "",
+      shortInstruction: "Sign the word Thank You and keep your hand steady inside the guide frame.",
+      commonMistakes: "Keep the full word sign clear and steady before capturing.",
     });
   });
 });

@@ -83,6 +83,8 @@ export type AdminStats = {
   topSignCounts: AdminCount[];
 };
 
+export type SampleReviewStatus = "pending" | "approved" | "rejected";
+
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
 const supabaseKey =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ?? process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -158,6 +160,71 @@ export async function deleteSample(sampleId: string): Promise<{ ok: boolean; mes
   }
 
   return { ok: true, message: "Sample deleted." };
+}
+
+export async function updateSampleReviewStatus(
+  sampleId: string,
+  reviewStatus: SampleReviewStatus,
+): Promise<{ ok: boolean; message: string }> {
+  if (!hasSupabaseConfig()) {
+    return {
+      ok: false,
+      message:
+        "Sample review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+    };
+  }
+
+  const supabase = createSupabaseClient();
+  const { error } = await supabase.from("samples").update({ review_status: reviewStatus }).eq("id", sampleId);
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true, message: `Sample ${reviewStatus}.` };
+}
+
+export async function updateSampleReviewStatuses({
+  reviewStatus,
+  signId,
+  qualityStatus,
+  currentReviewStatus,
+}: {
+  reviewStatus: Exclude<SampleReviewStatus, "pending">;
+  signId?: string;
+  qualityStatus?: string;
+  currentReviewStatus?: string;
+}): Promise<{ ok: boolean; message: string }> {
+  if (!hasSupabaseConfig()) {
+    return {
+      ok: false,
+      message:
+        "Sample review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+    };
+  }
+
+  const supabase = createSupabaseClient();
+  let query = supabase.from("samples").update({ review_status: reviewStatus });
+
+  if (signId) {
+    query = query.eq("sign_id", signId);
+  }
+
+  if (qualityStatus) {
+    query = query.eq("quality_status", qualityStatus);
+  }
+
+  if (currentReviewStatus) {
+    query = query.eq("review_status", currentReviewStatus);
+  }
+
+  const { error } = await query;
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true, message: `Matching samples ${reviewStatus}.` };
 }
 
 export async function loadRecognitionModel(): Promise<{ model: KnnModel | null; message: string }> {

@@ -1,19 +1,20 @@
 {
-  "generatedAt": "2026-06-11T02:15:07.782Z",
+  "generatedAt": "2026-06-11T07:43:23.300Z",
   "source": "Supabase samples table via .env.local public key",
   "modelFile": "public/models/active-knn-model.json",
   "dataset": {
-    "usableSampleCount": 71,
+    "usableSampleCount": 95,
     "countsByLabel": {
       "alphabet_A": 12,
       "alphabet_B": 12,
       "alphabet_C": 12,
       "number_1": 12,
       "number_2": 11,
-      "number_3": 12
+      "number_3": 12,
+      "word_i_love_you": 24
     },
-    "approvedCount": 0,
-    "pendingCount": 71,
+    "approvedCount": 95,
+    "pendingCount": 0,
     "rejectedExcluded": true,
     "labelsCovered": [
       "alphabet_A",
@@ -21,21 +22,22 @@
       "alphabet_C",
       "number_1",
       "number_2",
-      "number_3"
+      "number_3",
+      "word_i_love_you"
     ]
   },
   "validation": {
     "method": "1-nearest-neighbor over normalized landmark vectors",
     "leaveOneOut": {
-      "correct": 70,
-      "total": 71,
-      "accuracy": 0.985915
+      "correct": 91,
+      "total": 95,
+      "accuracy": 0.957895
     },
     "deterministicStratifiedHoldout": {
-      "trainCount": 53,
-      "testCount": 18,
-      "correct": 18,
-      "accuracy": 1
+      "trainCount": 71,
+      "testCount": 24,
+      "correct": 23,
+      "accuracy": 0.958333
     },
     "confusion": {
       "alphabet_A": {
@@ -46,7 +48,7 @@
       },
       "alphabet_C": {
         "alphabet_C": 11,
-        "number_3": 1
+        "word_i_love_you": 1
       },
       "number_1": {
         "number_1": 12
@@ -56,6 +58,11 @@
       },
       "number_3": {
         "number_3": 12
+      },
+      "word_i_love_you": {
+        "word_i_love_you": 21,
+        "alphabet_C": 1,
+        "number_1": 2
       }
     },
     "caveats": [

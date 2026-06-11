@@ -1,8 +1,17 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { BarChart3, CheckCircle2, Database, Layers, MessageSquare, RefreshCw, ShieldAlert, Trash2 } from "lucide-react";
-import { deleteSample, loadAdminData, type AdminCount, type AdminData, type AdminStats } from "@/lib/supabase";
+import { BarChart3, Check, CheckCheck, CheckCircle2, Database, Layers, MessageSquare, RefreshCw, ShieldAlert, Trash2, X } from "lucide-react";
+import {
+  deleteSample,
+  loadAdminData,
+  updateSampleReviewStatus,
+  updateSampleReviewStatuses,
+  type AdminCount,
+  type AdminData,
+  type AdminStats,
+  type SampleReviewStatus,
+} from "@/lib/supabase";
 import { signs } from "@/lib/signs";
 
 const qualityOptions = ["clean", "low_quality", "rejected"];
@@ -28,6 +37,8 @@ export function AdminDashboard() {
   const [message, setMessage] = useState("Loading admin data...");
   const [loading, setLoading] = useState(false);
   const [deletingSampleId, setDeletingSampleId] = useState<string | null>(null);
+  const [reviewingSampleId, setReviewingSampleId] = useState<string | null>(null);
+  const [approvingAll, setApprovingAll] = useState(false);
   const stats = adminData?.stats ?? emptyStats;
   const latestModel = adminData?.modelVersions[0];
   const latestDataset = adminData?.datasetVersions[0];
@@ -72,6 +83,45 @@ export function AdminDashboard() {
     setDeletingSampleId(null);
   }
 
+  async function handleReviewSample(sampleId: string, status: Exclude<SampleReviewStatus, "pending">) {
+    setReviewingSampleId(sampleId);
+    const result = await updateSampleReviewStatus(sampleId, status);
+    setMessage(result.message);
+
+    if (result.ok) {
+      await refreshAdminData();
+      setMessage(result.message);
+    }
+
+    setReviewingSampleId(null);
+  }
+
+  async function handleApproveAllSamples() {
+    const confirmed = window.confirm(
+      "Approve all samples matching the current filters? If no filters are selected, this approves every sample.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setApprovingAll(true);
+    const result = await updateSampleReviewStatuses({
+      reviewStatus: "approved",
+      signId: signId || undefined,
+      qualityStatus: qualityStatus || undefined,
+      currentReviewStatus: reviewStatus || undefined,
+    });
+    setMessage(result.message);
+
+    if (result.ok) {
+      await refreshAdminData();
+      setMessage(result.message);
+    }
+
+    setApprovingAll(false);
+  }
+
   useEffect(() => {
     refreshAdminData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -83,9 +133,6 @@ export function AdminDashboard() {
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-center">
           <div>
             <h1 className="text-2xl font-semibold text-ink">Admin Dashboard</h1>
-            <p className="mt-1 text-sm text-slate-600">
-              Read-only review surfaces for samples, feedback, dataset versions, and model versions.
-            </p>
           </div>
           <button
             type="button"
@@ -170,7 +217,6 @@ export function AdminDashboard() {
           <div className="flex items-center justify-between gap-3">
             <div>
               <h2 className="text-lg font-semibold text-ink">Model and dataset health</h2>
-              <p className="mt-1 text-sm text-slate-600">Latest registered training assets and model states.</p>
             </div>
             {latestModel?.status === "active" ? (
               <CheckCircle2 className="h-5 w-5 text-teal" aria-hidden="true" />
@@ -200,7 +246,21 @@ export function AdminDashboard() {
         </section>
       </section>
 
-      <DataPanel title="Samples" empty="No samples match the current filters.">
+      <DataPanel
+        title="Samples"
+        empty="No samples match the current filters."
+        action={
+          <button
+            type="button"
+            onClick={handleApproveAllSamples}
+            disabled={approvingAll || loading || stats.sampleTotal === 0 || reviewStatus === "approved"}
+            className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-line px-3 text-sm font-semibold text-teal transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            <CheckCheck className="h-4 w-4" aria-hidden="true" />
+            Approve all
+          </button>
+        }
+      >
         {(adminData?.samples ?? []).map((sample) => (
           <DataRow
             key={sample.id}
@@ -211,16 +271,38 @@ export function AdminDashboard() {
               `${Math.round(sample.detector_confidence * 100)}% confidence`,
             ]}
             action={
-              <button
-                type="button"
-                onClick={() => handleDeleteSample(sample.id, sample.sign_id)}
-                disabled={deletingSampleId === sample.id}
-                className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                title={`Delete ${sample.sign_id} sample`}
-                aria-label={`Delete ${sample.sign_id} sample`}
-              >
-                <Trash2 className="h-4 w-4" aria-hidden="true" />
-              </button>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleReviewSample(sample.id, "approved")}
+                  disabled={reviewingSampleId === sample.id || sample.review_status === "approved"}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-teal transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={`Approve ${sample.sign_id} sample`}
+                  aria-label={`Approve ${sample.sign_id} sample`}
+                >
+                  <Check className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleReviewSample(sample.id, "rejected")}
+                  disabled={reviewingSampleId === sample.id || sample.review_status === "rejected"}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={`Reject ${sample.sign_id} sample`}
+                  aria-label={`Reject ${sample.sign_id} sample`}
+                >
+                  <X className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteSample(sample.id, sample.sign_id)}
+                  disabled={deletingSampleId === sample.id}
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={`Delete ${sample.sign_id} sample`}
+                  aria-label={`Delete ${sample.sign_id} sample`}
+                >
+                  <Trash2 className="h-4 w-4" aria-hidden="true" />
+                </button>
+              </div>
             }
           />
         ))}
@@ -415,11 +497,22 @@ function formatLabel(label: string) {
   return label.replace(/_/g, " ");
 }
 
-function DataPanel({ title, empty, children }: { title: string; empty: string; children: React.ReactNode[] }) {
+function DataPanel({
+  title,
+  empty,
+  action,
+  children,
+}: {
+  title: string;
+  empty: string;
+  action?: React.ReactNode;
+  children: React.ReactNode[];
+}) {
   return (
     <section className="overflow-hidden rounded-lg border border-line bg-white shadow-soft">
-      <div className="border-b border-line px-5 py-4">
+      <div className="flex flex-col justify-between gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center">
         <h2 className="text-lg font-semibold text-ink">{title}</h2>
+        {action}
       </div>
       <div className="divide-y divide-line">
         {children.length > 0 ? children : <p className="px-5 py-4 text-sm text-slate-600">{empty}</p>}

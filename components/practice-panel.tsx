@@ -55,7 +55,6 @@ export function PracticePanel() {
             <p className="mt-2 text-sm text-slate-600">
               Expected hand count: {selectedSign.expectedHandCount}
             </p>
-            <p className="mt-4 text-base leading-7 text-slate-700">{selectedSign.shortInstruction}</p>
             <div className="mt-5 rounded-md border border-coral/30 bg-coral/5 p-4">
               <p className="text-sm font-semibold text-coral">Common correction</p>
               <p className="mt-1 text-sm leading-6 text-slate-700">{selectedSign.commonMistakes}</p>

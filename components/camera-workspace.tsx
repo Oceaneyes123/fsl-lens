@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { Camera, Check, HandMetal, RefreshCcw, Save, Settings, X } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { Camera, Check, HandMetal, Plus, RefreshCcw, Save, Settings, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { CameraTracker, type LandmarkSnapshot } from "@/components/camera-tracker";
-import { formatPredictedSign, signs } from "@/lib/signs";
+import { createWordSign, formatPredictedSign, signs } from "@/lib/signs";
 import { createPredictionTracker } from "@/lib/prediction";
 import { validateSampleQuality } from "@/lib/sample-quality";
 import { loadRecognitionModel, saveFeedback, saveLandmarkSample } from "@/lib/supabase";
@@ -24,6 +24,9 @@ type CameraWorkspaceProps = {
 
 export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   const [selectedLabel, setSelectedLabel] = useState(signs[0]?.label ?? "");
+  const [customSigns, setCustomSigns] = useState<typeof signs>([]);
+  const [wordInput, setWordInput] = useState("");
+  const [wordMessage, setWordMessage] = useState("");
   const [snapshot, setSnapshot] = useState<LandmarkSnapshot | null>(null);
   const [mirror, setMirror] = useState(true);
   const [overlay, setOverlay] = useState(true);
@@ -42,7 +45,8 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   const trackerRef = useRef(createPredictionTracker({ requiredFrames: 5 }));
   const historyRef = useRef<NormalizedLandmark[][][]>([]);
 
-  const selectedSign = signs.find((sign) => sign.label === selectedLabel) ?? signs[0];
+  const availableSigns = useMemo(() => [...signs, ...customSigns], [customSigns]);
+  const selectedSign = availableSigns.find((sign) => sign.label === selectedLabel) ?? availableSigns[0];
   const isPractice = mode === "practice";
   const requiredStableFrames = model?.thresholdConfig.requiredStableFrames ?? 5;
   const predictedSign = formatPredictedSign(recognition.predictedLabel);
@@ -177,9 +181,33 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   }
 
   function chooseRandomSign() {
-    const next = signs[Math.floor(Math.random() * signs.length)];
+    const next = availableSigns[Math.floor(Math.random() * availableSigns.length)];
     setSelectedLabel(next.label);
     setPracticeResult("idle");
+  }
+
+  function handleAddWordSign(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+
+    const value = wordInput.trim();
+    if (!value) {
+      setWordMessage("Enter a word before adding it.");
+      return;
+    }
+
+    const nextSign = createWordSign(value);
+    if (nextSign.label === "word_") {
+      setWordMessage("Use at least one letter or number for the word sign.");
+      return;
+    }
+
+    if (!availableSigns.some((sign) => sign.label === nextSign.label)) {
+      setCustomSigns((currentSigns) => [...currentSigns, nextSign]);
+    }
+
+    setSelectedLabel(nextSign.label);
+    setWordInput("");
+    setWordMessage(`${nextSign.displayName} added to the training list.`);
   }
 
   function handleCheckSign() {
@@ -200,9 +228,6 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
               <h1 className="text-xl font-semibold text-ink">
                 {mode === "capture" ? "Dataset Capture" : mode === "practice" ? "Practice Sign" : "Recognize Sign"}
               </h1>
-              <p className="mt-1 text-sm text-slate-600">
-                Camera access starts only after you press Start Camera.
-              </p>
             </div>
             <div className="flex gap-2">
               <button
@@ -318,6 +343,30 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
             <h2 className="text-lg font-semibold text-ink">
               {mode === "capture" ? "Capture sample" : "Practice target"}
             </h2>
+            {mode === "capture" ? (
+              <form onSubmit={handleAddWordSign} className="mt-4">
+                <label className="block text-sm font-medium text-slate-700" htmlFor="word-sign">
+                  Add word sign
+                </label>
+                <div className="mt-2 flex gap-2">
+                  <input
+                    id="word-sign"
+                    value={wordInput}
+                    onChange={(event) => setWordInput(event.target.value)}
+                    placeholder="Example: Thank you"
+                    className="h-11 min-w-0 flex-1 rounded-md border border-line bg-white px-3 text-sm text-ink"
+                  />
+                  <button
+                    type="submit"
+                    className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-ink px-3 text-sm font-semibold text-white"
+                  >
+                    <Plus className="h-4 w-4" aria-hidden="true" />
+                    Add
+                  </button>
+                </div>
+                {wordMessage ? <p className="mt-2 text-sm leading-6 text-slate-600">{wordMessage}</p> : null}
+              </form>
+            ) : null}
             <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="sign">
               Sign label
             </label>
@@ -327,13 +376,12 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
               onChange={(event) => setSelectedLabel(event.target.value)}
               className="mt-2 h-11 w-full rounded-md border border-line bg-white px-3 text-sm text-ink"
             >
-              {signs.map((sign) => (
+              {availableSigns.map((sign) => (
                 <option key={sign.label} value={sign.label}>
                   {sign.displayName} - {sign.type}
                 </option>
               ))}
             </select>
-            <p className="mt-3 text-sm leading-6 text-slate-600">{selectedSign.shortInstruction}</p>
             {isPractice ? (
               <div className="mt-4 rounded-md border border-line bg-mist p-3">
                 <p className="text-sm font-semibold text-ink">
@@ -342,13 +390,6 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
                     : practiceResult === "correct"
                       ? "Correct"
                       : "Try again"}
-                </p>
-                <p className="mt-1 text-sm leading-6 text-slate-600">
-                  {practiceResult === "idle"
-                    ? "Hold the target sign until the prediction is stable, then check it."
-                    : practiceResult === "correct"
-                      ? "The stable prediction matches the selected target."
-                      : "The stable prediction does not match the selected target yet."}
                 </p>
               </div>
             ) : null}

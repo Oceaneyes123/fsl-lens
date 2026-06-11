@@ -156,7 +156,6 @@ export function CameraTracker({ mirror, overlay, onSnapshot }: CameraTrackerProp
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
           {running ? "Stop Camera" : "Start Camera"}
         </button>
-        <p className="text-sm text-slate-600">FSL Lens uses your camera to detect hand landmarks in your browser.</p>
       </div>
     </div>
   );
