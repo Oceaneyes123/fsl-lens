@@ -1,10 +1,5 @@
-import { AppShell } from "@/components/app-shell";
-import { PracticePanel } from "@/components/practice-panel";
+import { CameraWorkspace } from "@/components/camera-workspace";
 
 export default function PracticePage() {
-  return (
-    <AppShell>
-      <PracticePanel />
-    </AppShell>
-  );
+  return <CameraWorkspace mode="practice" />;
 }

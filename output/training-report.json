@@ -1,0 +1,67 @@
+{
+  "generatedAt": "2026-06-11T02:15:07.782Z",
+  "source": "Supabase samples table via .env.local public key",
+  "modelFile": "public/models/active-knn-model.json",
+  "dataset": {
+    "usableSampleCount": 71,
+    "countsByLabel": {
+      "alphabet_A": 12,
+      "alphabet_B": 12,
+      "alphabet_C": 12,
+      "number_1": 12,
+      "number_2": 11,
+      "number_3": 12
+    },
+    "approvedCount": 0,
+    "pendingCount": 71,
+    "rejectedExcluded": true,
+    "labelsCovered": [
+      "alphabet_A",
+      "alphabet_B",
+      "alphabet_C",
+      "number_1",
+      "number_2",
+      "number_3"
+    ]
+  },
+  "validation": {
+    "method": "1-nearest-neighbor over normalized landmark vectors",
+    "leaveOneOut": {
+      "correct": 70,
+      "total": 71,
+      "accuracy": 0.985915
+    },
+    "deterministicStratifiedHoldout": {
+      "trainCount": 53,
+      "testCount": 18,
+      "correct": 18,
+      "accuracy": 1
+    },
+    "confusion": {
+      "alphabet_A": {
+        "alphabet_A": 12
+      },
+      "alphabet_B": {
+        "alphabet_B": 12
+      },
+      "alphabet_C": {
+        "alphabet_C": 11,
+        "number_3": 1
+      },
+      "number_1": {
+        "number_1": 12
+      },
+      "number_2": {
+        "number_2": 11
+      },
+      "number_3": {
+        "number_3": 12
+      }
+    },
+    "caveats": [
+      "This model only covers labels present in the current clean samples.",
+      "Pending samples are included because the current dataset has no approved samples.",
+      "No signer-based split is possible without signer metadata."
+    ]
+  }
+}

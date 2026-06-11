@@ -28,6 +28,23 @@ describe("evaluatePrediction", () => {
       }).state,
     ).toBe("unknown");
   });
+
+  it("keeps only the highest-confidence prediction per label", () => {
+    expect(
+      evaluatePrediction({
+        predictions: [
+          { label: "alphabet_B", confidence: 0.82 },
+          { label: "alphabet_A", confidence: 0.76 },
+          { label: "alphabet_B", confidence: 0.61 },
+          { label: "alphabet_C", confidence: 0.55 },
+        ],
+      }).topPredictions,
+    ).toEqual([
+      { label: "alphabet_B", confidence: 0.82 },
+      { label: "alphabet_A", confidence: 0.76 },
+      { label: "alphabet_C", confidence: 0.55 },
+    ]);
+  });
 });
 
 describe("createPredictionTracker", () => {

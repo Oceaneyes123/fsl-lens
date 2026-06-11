@@ -23,7 +23,18 @@ export function evaluatePrediction({
 }: {
   predictions: Prediction[];
 } & PredictionConfig): PredictionEvaluation {
-  const topPredictions = [...predictions].sort((a, b) => b.confidence - a.confidence).slice(0, 3);
+  const seenLabels = new Set<string>();
+  const topPredictions = [...predictions]
+    .sort((a, b) => b.confidence - a.confidence)
+    .filter((prediction) => {
+      if (seenLabels.has(prediction.label)) {
+        return false;
+      }
+
+      seenLabels.add(prediction.label);
+      return true;
+    })
+    .slice(0, 3);
   const best = topPredictions[0];
 
   if (!best || best.confidence < uncertainThreshold) {

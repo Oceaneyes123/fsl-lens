@@ -40,4 +40,20 @@ describe("validateSampleQuality", () => {
       }).status,
     ).toBe("low_quality");
   });
+
+  it("marks out-of-frame or unsteady samples as low quality", () => {
+    expect(
+      validateSampleQuality({
+        detectedHandCount: 1,
+        expectedHandCount: 1,
+        detectorConfidence: 0.9,
+        landmarksVisible: true,
+        insideGuideFrame: false,
+        steady: false,
+      }),
+    ).toEqual({
+      status: "low_quality",
+      reasons: ["Hand is outside the ideal camera area.", "Hold the sign steady before capturing."],
+    });
+  });
 });
