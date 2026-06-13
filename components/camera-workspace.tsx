@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Check, HandMetal, Plus, RefreshCcw, Save, Settings, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { CameraTracker, type LandmarkSnapshot } from "@/components/camera-tracker";
-import { createWordSign, formatPredictedSign, signs } from "@/lib/signs";
+import { createWordSign, formatPredictedSigns, signs } from "@/lib/signs";
 import { createDynamicFrameBuffer, summarizeDynamicRecording, type RecordedDynamicFrame } from "@/lib/dynamic-capture";
 import { recognizeDynamicSequence, type DynamicSequenceModel } from "@/lib/dynamic-recognition";
 import { createPredictionTracker } from "@/lib/prediction";
@@ -65,7 +65,7 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   const requiredStableFrames = isDynamicSign
     ? (dynamicModel?.thresholdConfig.requiredStableSequences ?? 2)
     : (model?.thresholdConfig.requiredStableFrames ?? 5);
-  const predictedSign = formatPredictedSign(recognition.predictedLabel);
+  const predictedSign = formatPredictedSigns(recognition.topPredictions);
 
   const quality = snapshot
     ? validateSampleQuality({

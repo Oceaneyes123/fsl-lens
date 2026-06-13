@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { alphabetSigns, createWordSign, formatPredictedSign, getSignByLabel, numberSigns, signs } from "./signs";
+import {
+  alphabetSigns,
+  createWordSign,
+  formatPredictedSign,
+  formatPredictedSigns,
+  getSignByLabel,
+  numberSigns,
+  signs,
+} from "./signs";
 
 describe("sign catalog", () => {
   it("contains 26 alphabet signs and 11 number signs", () => {
@@ -44,6 +52,35 @@ describe("formatPredictedSign", () => {
     expect(formatPredictedSign(null)).toEqual({
       value: "Unknown",
       type: "Predicted sign",
+    });
+  });
+});
+
+describe("formatPredictedSigns", () => {
+  it("returns unknown when the best prediction is below the display confidence threshold", () => {
+    expect(formatPredictedSigns([{ label: "alphabet_A", confidence: 0.949 }])).toEqual({
+      value: "Unknown",
+      type: "Predicted sign",
+    });
+  });
+
+  it("shows a single sign when it passes the display confidence threshold", () => {
+    expect(formatPredictedSigns([{ label: "alphabet_A", confidence: 0.95 }])).toEqual({
+      value: "A",
+      type: "Alphabet",
+    });
+  });
+
+  it("shows both alphabet and number predictions when both pass the display confidence threshold", () => {
+    expect(
+      formatPredictedSigns([
+        { label: "alphabet_A", confidence: 0.97 },
+        { label: "number_4", confidence: 0.96 },
+        { label: "alphabet_B", confidence: 0.95 },
+      ]),
+    ).toEqual({
+      value: "A / 4",
+      type: "Predicted signs",
     });
   });
 });

@@ -143,7 +143,7 @@ describe("dynamic landmark samples", () => {
       fps: 15,
       hand_count: 1,
       handedness: ["Right"],
-      detector_confidence: 0.95,
+      detector_confidence: 0.90,
       camera_type: "browser_webcam",
       lighting_note: "not_recorded",
       quality_status: "clean",

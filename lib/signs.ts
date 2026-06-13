@@ -13,6 +13,11 @@ export type Sign = {
   commonMistakes: string;
 };
 
+type Prediction = {
+  label: string;
+  confidence: number;
+};
+
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
 const dynamicAlphabetSigns = new Set(["J", "Z"]);
 
@@ -92,6 +97,35 @@ export function formatPredictedSign(label: string | null): { value: string; type
     value: toTitleCase(value),
     type: toTitleCase(type),
   };
+}
+
+export function formatPredictedSigns(predictions: Prediction[], minimumConfidence = 0.95): { value: string; type: string } {
+  const confidentPredictions = predictions
+    .filter((prediction) => prediction.confidence >= minimumConfidence)
+    .sort((a, b) => b.confidence - a.confidence);
+
+  if (confidentPredictions.length === 0) {
+    return formatPredictedSign(null);
+  }
+
+  const alphabetPrediction = findPredictionByType(confidentPredictions, "alphabet");
+  const numberPrediction = findPredictionByType(confidentPredictions, "number");
+
+  if (alphabetPrediction && numberPrediction) {
+    const alphabetSign = formatPredictedSign(alphabetPrediction.label);
+    const numberSign = formatPredictedSign(numberPrediction.label);
+
+    return {
+      value: `${alphabetSign.value} / ${numberSign.value}`,
+      type: "Predicted signs",
+    };
+  }
+
+  return formatPredictedSign(confidentPredictions[0].label);
+}
+
+function findPredictionByType(predictions: Prediction[], type: SignType) {
+  return predictions.find((prediction) => getSignByLabel(prediction.label)?.type === type);
 }
 
 function toTitleCase(value: string) {
