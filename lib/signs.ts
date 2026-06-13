@@ -1,10 +1,12 @@
 export type SignType = "alphabet" | "number" | "word";
+export type SignModality = "static" | "dynamic";
 
 export type Sign = {
   id: string;
   label: string;
   displayName: string;
   type: SignType;
+  modality: SignModality;
   expectedHandCount: 1 | 2;
   referenceImageUrl: string;
   shortInstruction: string;
@@ -12,16 +14,22 @@ export type Sign = {
 };
 
 const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+const dynamicAlphabetSigns = new Set(["J", "Z"]);
 
 export const alphabetSigns: Sign[] = alphabet.map((letter) => ({
   id: `alphabet_${letter}`,
   label: `alphabet_${letter}`,
   displayName: letter,
   type: "alphabet",
+  modality: dynamicAlphabetSigns.has(letter) ? "dynamic" : "static",
   expectedHandCount: 1,
   referenceImageUrl: `/references/alphabet-${letter.toLowerCase()}.png`,
-  shortInstruction: `Form the FSL letter ${letter} and keep your hand steady inside the guide frame.`,
-  commonMistakes: "Keep all visible fingers clearly separated from the background.",
+  shortInstruction: dynamicAlphabetSigns.has(letter)
+    ? `Sign the FSL letter ${letter} with its full motion inside the guide frame.`
+    : `Form the FSL letter ${letter} and keep your hand steady inside the guide frame.`,
+  commonMistakes: dynamicAlphabetSigns.has(letter)
+    ? "Keep the full letter motion clear inside the camera guide."
+    : "Keep all visible fingers clearly separated from the background.",
 }));
 
 export const numberSigns: Sign[] = Array.from({ length: 11 }, (_, value) => ({
@@ -29,6 +37,7 @@ export const numberSigns: Sign[] = Array.from({ length: 11 }, (_, value) => ({
   label: `number_${value}`,
   displayName: String(value),
   type: "number",
+  modality: "static",
   expectedHandCount: value === 10 ? 2 : 1,
   referenceImageUrl: `/references/number-${value}.png`,
   shortInstruction: `Form the FSL number ${value} and hold the sign still for a clear reading.`,
@@ -51,10 +60,11 @@ export function createWordSign(value: string): Sign {
     label,
     displayName,
     type: "word",
+    modality: "dynamic",
     expectedHandCount: 1,
     referenceImageUrl: "",
-    shortInstruction: `Sign the word ${displayName} and keep your hand steady inside the guide frame.`,
-    commonMistakes: "Keep the full word sign clear and steady before capturing.",
+    shortInstruction: `Sign the word ${displayName} with its full motion inside the guide frame.`,
+    commonMistakes: "Keep the full word sign motion clear inside the camera guide.",
   };
 }
 

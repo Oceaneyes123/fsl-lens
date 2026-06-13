@@ -2,12 +2,33 @@ create table if not exists signs (
   id uuid primary key default gen_random_uuid(),
   label text not null unique,
   display_name text not null,
-  type text not null check (type in ('alphabet', 'number')),
+  type text not null check (type in ('alphabet', 'number', 'word')),
+  modality text not null default 'static' check (modality in ('static', 'dynamic')),
   expected_hand_count integer not null check (expected_hand_count in (1, 2)),
   reference_image_url text,
   short_instruction text not null,
   common_mistakes text not null,
   is_active boolean not null default true
+);
+
+create table if not exists dynamic_samples (
+  id uuid primary key default gen_random_uuid(),
+  sign_id text not null,
+  session_id text not null,
+  frames_json jsonb not null,
+  frame_count integer not null,
+  fps numeric not null,
+  hand_count integer not null check (hand_count in (1, 2)),
+  handedness text[] not null default '{}',
+  detector_confidence numeric not null,
+  camera_type text not null,
+  lighting_note text,
+  quality_status text not null check (quality_status in ('clean', 'low_quality', 'rejected')),
+  review_status text not null default 'pending',
+  signer_id text,
+  consent_raw_image boolean not null default false,
+  raw_image_url text,
+  created_at timestamptz not null default now()
 );
 
 create table if not exists samples (

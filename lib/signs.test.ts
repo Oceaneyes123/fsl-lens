@@ -12,6 +12,12 @@ describe("sign catalog", () => {
     expect(getSignByLabel("alphabet_A")?.displayName).toBe("A");
     expect(getSignByLabel("number_10")?.displayName).toBe("10");
   });
+
+  it("marks moving alphabet signs as dynamic while keeping static signs unchanged", () => {
+    expect(getSignByLabel("alphabet_J")?.modality).toBe("dynamic");
+    expect(getSignByLabel("alphabet_Z")?.modality).toBe("dynamic");
+    expect(getSignByLabel("alphabet_A")?.modality).toBe("static");
+  });
 });
 
 describe("formatPredictedSign", () => {
@@ -49,10 +55,11 @@ describe("createWordSign", () => {
       label: "word_thank_you",
       displayName: "Thank You",
       type: "word",
+      modality: "dynamic",
       expectedHandCount: 1,
       referenceImageUrl: "",
-      shortInstruction: "Sign the word Thank You and keep your hand steady inside the guide frame.",
-      commonMistakes: "Keep the full word sign clear and steady before capturing.",
+      shortInstruction: "Sign the word Thank You with its full motion inside the guide frame.",
+      commonMistakes: "Keep the full word sign motion clear inside the camera guide.",
     });
   });
 });

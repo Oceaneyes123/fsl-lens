@@ -1,25 +1,67 @@
 {
-  "generatedAt": "2026-06-11T07:43:23.300Z",
+  "generatedAt": "2026-06-13T14:03:54.433Z",
   "source": "Supabase samples table via .env.local public key",
   "modelFile": "public/models/active-knn-model.json",
   "dataset": {
-    "usableSampleCount": 95,
+    "usableSampleCount": 1000,
     "countsByLabel": {
-      "alphabet_A": 12,
+      "alphabet_A": 17,
       "alphabet_B": 12,
       "alphabet_C": 12,
       "number_1": 12,
       "number_2": 11,
       "number_3": 12,
-      "word_i_love_you": 24
+      "word_i_love_you": 24,
+      "alphabet_D": 27,
+      "alphabet_E": 30,
+      "alphabet_F": 37,
+      "alphabet_G": 51,
+      "alphabet_H": 27,
+      "alphabet_I": 46,
+      "alphabet_K": 46,
+      "alphabet_L": 49,
+      "alphabet_M": 41,
+      "alphabet_N": 43,
+      "alphabet_O": 54,
+      "alphabet_P": 49,
+      "alphabet_Q": 38,
+      "alphabet_R": 42,
+      "alphabet_S": 41,
+      "alphabet_T": 55,
+      "alphabet_U": 34,
+      "alphabet_V": 39,
+      "alphabet_W": 34,
+      "alphabet_X": 72,
+      "alphabet_Y": 45
     },
-    "approvedCount": 95,
+    "approvedCount": 1000,
     "pendingCount": 0,
     "rejectedExcluded": true,
     "labelsCovered": [
       "alphabet_A",
       "alphabet_B",
       "alphabet_C",
+      "alphabet_D",
+      "alphabet_E",
+      "alphabet_F",
+      "alphabet_G",
+      "alphabet_H",
+      "alphabet_I",
+      "alphabet_K",
+      "alphabet_L",
+      "alphabet_M",
+      "alphabet_N",
+      "alphabet_O",
+      "alphabet_P",
+      "alphabet_Q",
+      "alphabet_R",
+      "alphabet_S",
+      "alphabet_T",
+      "alphabet_U",
+      "alphabet_V",
+      "alphabet_W",
+      "alphabet_X",
+      "alphabet_Y",
       "number_1",
       "number_2",
       "number_3",
@@ -29,40 +71,130 @@
   "validation": {
     "method": "1-nearest-neighbor over normalized landmark vectors",
     "leaveOneOut": {
-      "correct": 91,
-      "total": 95,
-      "accuracy": 0.957895
+      "correct": 947,
+      "total": 1000,
+      "accuracy": 0.947
     },
     "deterministicStratifiedHoldout": {
-      "trainCount": 71,
-      "testCount": 24,
-      "correct": 23,
-      "accuracy": 0.958333
+      "trainCount": 746,
+      "testCount": 254,
+      "correct": 241,
+      "accuracy": 0.948819
     },
     "confusion": {
       "alphabet_A": {
-        "alphabet_A": 12
+        "alphabet_A": 15,
+        "alphabet_T": 1,
+        "alphabet_S": 1
       },
       "alphabet_B": {
-        "alphabet_B": 12
+        "alphabet_B": 11,
+        "alphabet_F": 1
       },
       "alphabet_C": {
         "alphabet_C": 11,
-        "word_i_love_you": 1
+        "alphabet_O": 1
       },
       "number_1": {
-        "number_1": 12
+        "number_1": 11,
+        "alphabet_L": 1
       },
       "number_2": {
-        "number_2": 11
+        "number_2": 5,
+        "alphabet_U": 2,
+        "alphabet_V": 4
       },
       "number_3": {
         "number_3": 12
       },
       "word_i_love_you": {
         "word_i_love_you": 21,
-        "alphabet_C": 1,
-        "number_1": 2
+        "alphabet_O": 1,
+        "alphabet_Y": 1,
+        "alphabet_L": 1
+      },
+      "alphabet_D": {
+        "alphabet_D": 26,
+        "number_1": 1
+      },
+      "alphabet_E": {
+        "alphabet_E": 29,
+        "alphabet_O": 1
+      },
+      "alphabet_F": {
+        "alphabet_F": 37
+      },
+      "alphabet_G": {
+        "alphabet_G": 51
+      },
+      "alphabet_H": {
+        "alphabet_H": 26,
+        "alphabet_G": 1
+      },
+      "alphabet_I": {
+        "alphabet_I": 45,
+        "alphabet_Y": 1
+      },
+      "alphabet_K": {
+        "alphabet_K": 44,
+        "alphabet_G": 2
+      },
+      "alphabet_L": {
+        "alphabet_L": 49
+      },
+      "alphabet_M": {
+        "alphabet_M": 35,
+        "alphabet_N": 6
+      },
+      "alphabet_N": {
+        "alphabet_N": 41,
+        "alphabet_M": 2
+      },
+      "alphabet_O": {
+        "alphabet_O": 53,
+        "alphabet_E": 1
+      },
+      "alphabet_P": {
+        "alphabet_P": 48,
+        "alphabet_Q": 1
+      },
+      "alphabet_Q": {
+        "alphabet_Q": 38
+      },
+      "alphabet_R": {
+        "alphabet_R": 36,
+        "alphabet_V": 1,
+        "alphabet_U": 5
+      },
+      "alphabet_S": {
+        "alphabet_S": 40,
+        "alphabet_N": 1
+      },
+      "alphabet_T": {
+        "alphabet_T": 52,
+        "alphabet_X": 2,
+        "alphabet_M": 1
+      },
+      "alphabet_U": {
+        "alphabet_U": 31,
+        "alphabet_V": 1,
+        "alphabet_R": 2
+      },
+      "alphabet_V": {
+        "alphabet_V": 31,
+        "number_2": 5,
+        "alphabet_U": 3
+      },
+      "alphabet_W": {
+        "alphabet_W": 33,
+        "alphabet_R": 1
+      },
+      "alphabet_X": {
+        "alphabet_X": 72
+      },
+      "alphabet_Y": {
+        "alphabet_Y": 44,
+        "alphabet_I": 1
       }
     },
     "caveats": [

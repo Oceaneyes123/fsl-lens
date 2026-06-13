@@ -2,41 +2,29 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
+import { readEnvFile } from "./train-knn-model.mjs";
 
-const defaultModelPath = path.join("public", "models", "active-knn-model.json");
-const defaultReportPath = path.join("output", "training-report.json");
+const defaultModelPath = path.join("public", "models", "active-dynamic-model.json");
+const defaultReportPath = path.join("output", "dynamic-training-report.json");
 const defaultEnvPath = ".env.local";
+const defaultTargetFrameCount = 30;
 
-export function readEnvFile(filePath = defaultEnvPath) {
-  return Object.fromEntries(
-    fs
-      .readFileSync(filePath, "utf8")
-      .split(/\r?\n/)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#") && line.includes("="))
-      .map((line) => {
-        const index = line.indexOf("=");
-        return [line.slice(0, index), line.slice(index + 1).replace(/^["']|["']$/g, "")];
-      }),
-  );
-}
+export function normalizeDynamicSequence(frames, { targetFrameCount = defaultTargetFrameCount } = {}) {
+  const resampledFrames = resampleLandmarkFrames(frames, targetFrameCount);
 
-export function normalizeLandmarks(hands) {
-  return hands.flatMap((hand) => normalizeHand(hand));
-}
-
-export function distance(left, right) {
-  let sum = 0;
-
-  for (let index = 0; index < left.length; index += 1) {
-    const delta = left[index] - right[index];
-    sum += delta * delta;
+  if (resampledFrames.length === 0) {
+    return [];
   }
 
-  return Math.sqrt(sum / left.length);
+  return resampledFrames.flatMap((frame, frameIndex) => {
+    const normalized = normalizeLandmarks(frame);
+    const previousFrame = frameIndex === 0 ? null : resampledFrames[frameIndex - 1];
+    const deltas = previousFrame ? calculateFrameDeltas(previousFrame, frame) : Array(normalized.length).fill(0);
+    return [...normalized, ...deltas];
+  });
 }
 
-export function predictNearest(samples, target, excludeId = null) {
+export function predictNearestSequence(samples, target, excludeId = null) {
   return (
     samples
       .filter(
@@ -48,10 +36,29 @@ export function predictNearest(samples, target, excludeId = null) {
   );
 }
 
-export async function trainKnnModel({
+export function createUsableDynamicSamples(rows, { targetFrameCount = defaultTargetFrameCount } = {}) {
+  return rows
+    .filter((row) => row.quality_status === "clean")
+    .filter((row) => Array.isArray(row.frames_json) && row.frames_json.length === row.frame_count)
+    .map((row) => ({
+      id: row.id,
+      signLabel: row.sign_id,
+      handCount: row.hand_count,
+      frameCount: row.frame_count,
+      fps: Number(row.fps),
+      vector: normalizeDynamicSequence(row.frames_json, { targetFrameCount }),
+      qualityStatus: row.quality_status,
+      reviewStatus: row.review_status,
+      detectorConfidence: Number(row.detector_confidence),
+    }))
+    .filter((sample) => sample.vector.length === targetFrameCount * sample.handCount * 21 * 3 * 2);
+}
+
+export async function trainDynamicModel({
   envPath = defaultEnvPath,
   modelPath = defaultModelPath,
   reportPath = defaultReportPath,
+  targetFrameCount = defaultTargetFrameCount,
 } = {}) {
   const env = readEnvFile(envPath);
   const supabaseUrl = env.NEXT_PUBLIC_SUPABASE_URL;
@@ -63,8 +70,8 @@ export async function trainKnnModel({
 
   const supabase = createClient(supabaseUrl, supabaseKey);
   const { data, error } = await supabase
-    .from("samples")
-    .select("id, sign_id, hand_count, handedness, landmarks_json, quality_status, review_status, detector_confidence")
+    .from("dynamic_samples")
+    .select("id, sign_id, hand_count, frames_json, frame_count, fps, quality_status, review_status, detector_confidence")
     .eq("quality_status", "clean")
     .order("created_at", { ascending: true });
 
@@ -72,25 +79,24 @@ export async function trainKnnModel({
     throw new Error(error.message);
   }
 
-  const usableSamples = createUsableSamples(data ?? []);
+  const usableSamples = createUsableDynamicSamples(data ?? [], { targetFrameCount });
 
   if (usableSamples.length === 0) {
-    throw new Error("No usable clean samples found.");
+    throw new Error("No usable clean dynamic samples found.");
   }
 
   const { train, test } = stratifiedSplit(usableSamples);
-  const report = createTrainingReport({
-    samples: usableSamples,
-    train,
-    test,
-    modelPath,
-  });
-  const model = createModel(usableSamples);
+  const report = createTrainingReport({ samples: usableSamples, train, test, modelPath });
+  const model = createModel(usableSamples, { targetFrameCount });
 
   writeJson(modelPath, model);
   writeJson(reportPath, report);
 
   return { model, report };
+}
+
+function normalizeLandmarks(hands) {
+  return hands.flatMap((hand) => normalizeHand(hand));
 }
 
 function normalizeHand(hand) {
@@ -107,35 +113,60 @@ function normalizeHand(hand) {
   ]);
 }
 
-function createUsableSamples(rows) {
-  return rows
-    .filter((row) => Array.isArray(row.landmarks_json) && row.landmarks_json.length === row.hand_count)
-    .map((row) => ({
-      id: row.id,
-      signLabel: row.sign_id,
-      handCount: row.hand_count,
-      handedness: row.handedness ?? [],
-      vector: normalizeLandmarks(row.landmarks_json),
-      qualityStatus: row.quality_status,
-      reviewStatus: row.review_status,
-      detectorConfidence: Number(row.detector_confidence),
-    }))
-    .filter((sample) => sample.vector.length === sample.handCount * 21 * 3);
+function resampleLandmarkFrames(frames, targetFrameCount) {
+  if (frames.length === 0 || targetFrameCount <= 0) {
+    return [];
+  }
+
+  if (targetFrameCount === 1) {
+    return [frames[0]];
+  }
+
+  return Array.from({ length: targetFrameCount }, (_, index) => {
+    const sourceIndex = Math.round((index * (frames.length - 1)) / (targetFrameCount - 1));
+    return frames[sourceIndex];
+  });
 }
 
-function createModel(samples) {
+function calculateFrameDeltas(previousFrame, frame) {
+  return frame.flatMap((hand, handIndex) =>
+    hand.flatMap((point, pointIndex) => {
+      const previousPoint = previousFrame[handIndex]?.[pointIndex] ?? point;
+      return [
+        roundFeature(point.x - previousPoint.x),
+        roundFeature(point.y - previousPoint.y),
+        roundFeature((point.z ?? 0) - (previousPoint.z ?? 0)),
+      ];
+    }),
+  );
+}
+
+function distance(left, right) {
+  let sum = 0;
+
+  for (let index = 0; index < left.length; index += 1) {
+    const delta = left[index] - right[index];
+    sum += delta * delta;
+  }
+
+  return Math.sqrt(sum / left.length);
+}
+
+function createModel(samples, { targetFrameCount }) {
   return {
-    versionName: `local-knn-${new Date().toISOString().slice(0, 10)}`,
-    modelType: "static_knn",
+    versionName: `local-dynamic-knn-${new Date().toISOString().slice(0, 10)}`,
+    modelType: "dynamic_sequence_knn",
     thresholdConfig: {
       confirmThreshold: 0.8,
       uncertainThreshold: 0.6,
-      requiredStableFrames: 5,
+      requiredStableSequences: 2,
     },
-    samples: samples.map(({ signLabel, handCount, handedness, vector, qualityStatus }) => ({
+    sequenceConfig: {
+      targetFrameCount,
+    },
+    samples: samples.map(({ signLabel, handCount, vector, qualityStatus }) => ({
       signLabel,
       handCount,
-      handedness,
       vector,
       qualityStatus,
     })),
@@ -147,7 +178,7 @@ function createTrainingReport({ samples, train, test, modelPath }) {
   const confusion = {};
 
   for (const sample of samples) {
-    const result = predictNearest(samples, sample, sample.id);
+    const result = predictNearestSequence(samples, sample, sample.id);
     const predicted = result?.label ?? "none";
 
     confusion[sample.signLabel] ??= {};
@@ -161,7 +192,7 @@ function createTrainingReport({ samples, train, test, modelPath }) {
   let splitCorrect = 0;
 
   for (const sample of test) {
-    const result = predictNearest(train, sample);
+    const result = predictNearestSequence(train, sample);
 
     if (result?.label === sample.signLabel) {
       splitCorrect += 1;
@@ -175,18 +206,17 @@ function createTrainingReport({ samples, train, test, modelPath }) {
 
   return {
     generatedAt: new Date().toISOString(),
-    source: "Supabase samples table via .env.local public key",
+    source: "Supabase dynamic_samples table via .env.local public key",
     modelFile: modelPath.replaceAll("\\", "/"),
     dataset: {
       usableSampleCount: samples.length,
       countsByLabel,
       approvedCount: samples.filter((sample) => sample.reviewStatus === "approved").length,
       pendingCount: samples.filter((sample) => sample.reviewStatus === "pending").length,
-      rejectedExcluded: true,
       labelsCovered: Object.keys(countsByLabel).sort(),
     },
     validation: {
-      method: "1-nearest-neighbor over normalized landmark vectors",
+      method: "1-nearest-neighbor over normalized landmark sequences with frame deltas",
       leaveOneOut: {
         correct: leaveOneOutCorrect,
         total: samples.length,
@@ -196,12 +226,11 @@ function createTrainingReport({ samples, train, test, modelPath }) {
         trainCount: train.length,
         testCount: test.length,
         correct: splitCorrect,
-        accuracy: roundFeature(splitCorrect / test.length),
+        accuracy: test.length > 0 ? roundFeature(splitCorrect / test.length) : 0,
       },
       confusion,
       caveats: [
-        "This model only covers labels present in the current clean samples.",
-        "Pending samples are included because the current dataset has no approved samples.",
+        "This baseline is browser-exportable and should be replaced by LSTM/GRU or Temporal CNN after enough signer-diverse clips exist.",
         "No signer-based split is possible without signer metadata.",
       ],
     },
@@ -242,7 +271,7 @@ function roundFeature(value) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
-  trainKnnModel()
+  trainDynamicModel()
     .then(({ report }) => {
       console.log(JSON.stringify(report, null, 2));
     })

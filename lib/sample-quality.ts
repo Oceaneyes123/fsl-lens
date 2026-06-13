@@ -7,6 +7,7 @@ export type SampleQualityInput = {
   landmarksVisible: boolean;
   insideGuideFrame: boolean;
   steady: boolean;
+  requireSteady?: boolean;
 };
 
 export type SampleQualityResult = {
@@ -43,7 +44,7 @@ export function validateSampleQuality(input: SampleQualityInput): SampleQualityR
     reasons.push("Hand is outside the ideal camera area.");
   }
 
-  if (!input.steady) {
+  if (input.requireSteady !== false && !input.steady) {
     reasons.push("Hold the sign steady before capturing.");
   }
 

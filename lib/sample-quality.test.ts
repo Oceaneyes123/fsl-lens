@@ -56,4 +56,18 @@ describe("validateSampleQuality", () => {
       reasons: ["Hand is outside the ideal camera area.", "Hold the sign steady before capturing."],
     });
   });
+
+  it("does not penalize movement when validating a dynamic sign sequence", () => {
+    expect(
+      validateSampleQuality({
+        detectedHandCount: 1,
+        expectedHandCount: 1,
+        detectorConfidence: 0.9,
+        landmarksVisible: true,
+        insideGuideFrame: true,
+        steady: false,
+        requireSteady: false,
+      }),
+    ).toEqual({ status: "clean", reasons: [] });
+  });
 });

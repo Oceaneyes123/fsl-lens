@@ -1,6 +1,7 @@
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { FeedbackInsert } from "./feedback";
+import type { DynamicSequenceModel } from "./dynamic-recognition";
 import type { KnnModel } from "./recognition";
 import { signs } from "./signs";
 
@@ -19,6 +20,24 @@ type SampleInsert = {
   raw_image_url: string | null;
 };
 
+export type DynamicSampleInsert = {
+  sign_id: string;
+  session_id: string;
+  frames_json: unknown;
+  frame_count: number;
+  fps: number;
+  hand_count: number;
+  handedness: string[];
+  detector_confidence: number;
+  camera_type: string;
+  lighting_note: string;
+  quality_status: string;
+  review_status: string;
+  signer_id: string | null;
+  consent_raw_image: boolean;
+  raw_image_url: string | null;
+};
+
 export type AdminSampleRow = {
   id: string;
   sign_id: string;
@@ -28,6 +47,11 @@ export type AdminSampleRow = {
   quality_status: string;
   review_status: string;
   created_at: string;
+};
+
+export type AdminDynamicSampleRow = AdminSampleRow & {
+  frame_count: number;
+  fps: number;
 };
 
 export type AdminFeedbackRow = {
@@ -60,6 +84,7 @@ export type AdminDatasetVersionRow = {
 
 export type AdminData = {
   samples: AdminSampleRow[];
+  dynamicSamples: AdminDynamicSampleRow[];
   feedback: AdminFeedbackRow[];
   modelVersions: AdminModelVersionRow[];
   datasetVersions: AdminDatasetVersionRow[];
@@ -73,6 +98,7 @@ export type AdminCount = {
 
 export type AdminStats = {
   sampleTotal: number;
+  dynamicSampleTotal: number;
   feedbackTotal: number;
   modelVersionTotal: number;
   datasetVersionTotal: number;
@@ -124,6 +150,28 @@ export async function saveLandmarkSample(sample: SampleInsert): Promise<{ ok: bo
   return { ok: true, message: "Sample saved.", sampleId: data?.id ?? null };
 }
 
+export async function saveDynamicLandmarkSample(
+  sample: DynamicSampleInsert,
+): Promise<{ ok: boolean; message: string; sampleId: string | null }> {
+  if (!hasSupabaseConfig()) {
+    return {
+      ok: false,
+      message:
+        "Supabase save requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+      sampleId: null,
+    };
+  }
+
+  const supabase = createSupabaseClient();
+  const { data, error } = await supabase.from("dynamic_samples").insert(sample).select("id").single();
+
+  if (error) {
+    return { ok: false, message: error.message, sampleId: null };
+  }
+
+  return { ok: true, message: "Dynamic sample saved.", sampleId: data?.id ?? null };
+}
+
 export async function saveFeedback(feedback: FeedbackInsert): Promise<{ ok: boolean; message: string }> {
   if (!hasSupabaseConfig()) {
     return {
@@ -162,6 +210,25 @@ export async function deleteSample(sampleId: string): Promise<{ ok: boolean; mes
   return { ok: true, message: "Sample deleted." };
 }
 
+export async function deleteDynamicSample(sampleId: string): Promise<{ ok: boolean; message: string }> {
+  if (!hasSupabaseConfig()) {
+    return {
+      ok: false,
+      message:
+        "Dynamic sample deletion requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+    };
+  }
+
+  const supabase = createSupabaseClient();
+  const { error } = await supabase.from("dynamic_samples").delete().eq("id", sampleId);
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true, message: "Dynamic sample deleted." };
+}
+
 export async function updateSampleReviewStatus(
   sampleId: string,
   reviewStatus: SampleReviewStatus,
@@ -182,6 +249,71 @@ export async function updateSampleReviewStatus(
   }
 
   return { ok: true, message: `Sample ${reviewStatus}.` };
+}
+
+export async function updateDynamicSampleReviewStatus(
+  sampleId: string,
+  reviewStatus: SampleReviewStatus,
+): Promise<{ ok: boolean; message: string }> {
+  if (!hasSupabaseConfig()) {
+    return {
+      ok: false,
+      message:
+        "Dynamic sample review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+    };
+  }
+
+  const supabase = createSupabaseClient();
+  const { error } = await supabase.from("dynamic_samples").update({ review_status: reviewStatus }).eq("id", sampleId);
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true, message: `Dynamic sample ${reviewStatus}.` };
+}
+
+export async function updateDynamicSampleReviewStatuses({
+  reviewStatus,
+  signId,
+  qualityStatus,
+  currentReviewStatus,
+}: {
+  reviewStatus: Exclude<SampleReviewStatus, "pending">;
+  signId?: string;
+  qualityStatus?: string;
+  currentReviewStatus?: string;
+}): Promise<{ ok: boolean; message: string }> {
+  if (!hasSupabaseConfig()) {
+    return {
+      ok: false,
+      message:
+        "Dynamic sample review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+    };
+  }
+
+  const supabase = createSupabaseClient();
+  let query = supabase.from("dynamic_samples").update({ review_status: reviewStatus });
+
+  if (signId) {
+    query = query.eq("sign_id", signId);
+  }
+
+  if (qualityStatus) {
+    query = query.eq("quality_status", qualityStatus);
+  }
+
+  if (currentReviewStatus) {
+    query = query.eq("review_status", currentReviewStatus);
+  }
+
+  const { error } = await query;
+
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+
+  return { ok: true, message: `Matching dynamic samples ${reviewStatus}.` };
 }
 
 export async function updateSampleReviewStatuses({
@@ -233,6 +365,7 @@ export async function loadRecognitionModel(): Promise<{ model: KnnModel | null; 
     const { data, error } = await supabase
       .from("model_versions")
       .select("model_file_url")
+      .neq("model_type", "dynamic_sequence_knn")
       .eq("status", "active")
       .order("created_at", { ascending: false })
       .limit(1)
@@ -248,6 +381,30 @@ export async function loadRecognitionModel(): Promise<{ model: KnnModel | null; 
   }
 
   return loadFallbackModel("No active Supabase model is configured.");
+}
+
+export async function loadDynamicRecognitionModel(): Promise<{ model: DynamicSequenceModel | null; message: string }> {
+  if (hasSupabaseConfig()) {
+    const supabase = createSupabaseClient();
+    const { data, error } = await supabase
+      .from("model_versions")
+      .select("model_file_url")
+      .eq("model_type", "dynamic_sequence_knn")
+      .eq("status", "active")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (error) {
+      return loadFallbackDynamicModel(`Unable to load active dynamic model metadata: ${error.message}`);
+    }
+
+    if (data?.model_file_url) {
+      return fetchDynamicModelJson(data.model_file_url, "Loaded active Supabase dynamic model.");
+    }
+  }
+
+  return loadFallbackDynamicModel("No active Supabase dynamic model is configured.");
 }
 
 export async function loadAdminData({
@@ -274,21 +431,46 @@ export async function loadAdminData({
     .select("id, sign_id, session_id, hand_count, detector_confidence, quality_status, review_status, created_at")
     .order("created_at", { ascending: false })
     .limit(25);
+  let dynamicSamplesQuery = supabase
+    .from("dynamic_samples")
+    .select("id, sign_id, session_id, hand_count, frame_count, fps, detector_confidence, quality_status, review_status, created_at")
+    .order("created_at", { ascending: false })
+    .limit(25);
 
   if (signId) {
     samplesQuery = samplesQuery.eq("sign_id", signId);
+    dynamicSamplesQuery = dynamicSamplesQuery.eq("sign_id", signId);
   }
 
   if (qualityStatus) {
     samplesQuery = samplesQuery.eq("quality_status", qualityStatus);
+    dynamicSamplesQuery = dynamicSamplesQuery.eq("quality_status", qualityStatus);
   }
 
   if (reviewStatus) {
     samplesQuery = samplesQuery.eq("review_status", reviewStatus);
+    dynamicSamplesQuery = dynamicSamplesQuery.eq("review_status", reviewStatus);
   }
 
   const sampleCountQuery = (quality?: string, review?: string, sign?: string) => {
     let query = supabase.from("samples").select("*", { count: "exact", head: true });
+
+    if (sign) {
+      query = query.eq("sign_id", sign);
+    }
+
+    if (quality) {
+      query = query.eq("quality_status", quality);
+    }
+
+    if (review) {
+      query = query.eq("review_status", review);
+    }
+
+    return query;
+  };
+  const dynamicSampleCountQuery = (quality?: string, review?: string, sign?: string) => {
+    let query = supabase.from("dynamic_samples").select("*", { count: "exact", head: true });
 
     if (sign) {
       query = query.eq("sign_id", sign);
@@ -331,19 +513,23 @@ export async function loadAdminData({
   const reviewOptions = ["pending", "approved", "rejected"];
   const modelStatusOptions = ["draft", "testing", "active", "archived"];
   const topSignQueries = signs.map((sign) => sampleCountQuery(qualityStatus, reviewStatus, sign.label));
+  const topDynamicSignQueries = signs.map((sign) => dynamicSampleCountQuery(qualityStatus, reviewStatus, sign.label));
 
   const [
     samples,
+    dynamicSamples,
     feedback,
     modelVersions,
     datasetVersions,
     sampleTotal,
+    dynamicSampleTotal,
     feedbackTotal,
     modelVersionTotal,
     datasetVersionTotal,
     ...statResults
   ] = await Promise.all([
     samplesQuery,
+    dynamicSamplesQuery,
     supabase
       .from("feedback")
       .select("id, session_id, predicted_sign_id, expected_sign_id, confidence, was_correct, created_at")
@@ -358,6 +544,7 @@ export async function loadAdminData({
       ascending: false,
     }),
     sampleCountQuery(qualityStatus, reviewStatus, signId),
+    dynamicSampleCountQuery(qualityStatus, reviewStatus, signId),
     feedbackCountQuery(),
     modelStatusCountQuery(),
     supabase.from("dataset_versions").select("*", { count: "exact", head: true }),
@@ -368,16 +555,18 @@ export async function loadAdminData({
     feedbackCountQuery(null),
     ...modelStatusOptions.map((option) => modelStatusCountQuery(option)),
     ...topSignQueries,
+    ...topDynamicSignQueries,
   ]);
 
   const statError = [
     sampleTotal,
+    dynamicSampleTotal,
     feedbackTotal,
     modelVersionTotal,
     datasetVersionTotal,
     ...statResults,
   ].find((result) => result.error)?.error;
-  const firstError = samples.error ?? feedback.error ?? modelVersions.error ?? datasetVersions.error ?? statError;
+  const firstError = samples.error ?? dynamicSamples.error ?? feedback.error ?? modelVersions.error ?? datasetVersions.error ?? statError;
   if (firstError) {
     return { ok: false, data: null, message: firstError.message };
   }
@@ -392,17 +581,21 @@ export async function loadAdminData({
     qualityOptions.length + reviewOptions.length + 3,
     qualityOptions.length + reviewOptions.length + 3 + modelStatusOptions.length
   );
-  const signResults = statResults.slice(qualityOptions.length + reviewOptions.length + 3 + modelStatusOptions.length);
+  const signResultsStart = qualityOptions.length + reviewOptions.length + 3 + modelStatusOptions.length;
+  const signResults = statResults.slice(signResultsStart, signResultsStart + signs.length);
+  const dynamicSignResults = statResults.slice(signResultsStart + signs.length);
 
   return {
     ok: true,
     data: {
       samples: samples.data ?? [],
+      dynamicSamples: dynamicSamples.data ?? [],
       feedback: feedback.data ?? [],
       modelVersions: modelVersions.data ?? [],
       datasetVersions: datasetVersions.data ?? [],
       stats: {
         sampleTotal: sampleTotal.count ?? 0,
+        dynamicSampleTotal: dynamicSampleTotal.count ?? 0,
         feedbackTotal: feedbackTotal.count ?? 0,
         modelVersionTotal: modelVersionTotal.count ?? 0,
         datasetVersionTotal: datasetVersionTotal.count ?? 0,
@@ -419,7 +612,7 @@ export async function loadAdminData({
         topSignCounts: signs
           .map((sign, index) => ({
             label: sign.displayName,
-            count: signResults[index]?.count ?? 0,
+            count: (signResults[index]?.count ?? 0) + (dynamicSignResults[index]?.count ?? 0),
           }))
           .filter((item) => item.count > 0)
           .sort((a, b) => b.count - a.count)
@@ -437,6 +630,13 @@ async function loadFallbackModel(reason: string) {
   }));
 }
 
+async function loadFallbackDynamicModel(reason: string) {
+  return fetchDynamicModelJson("/models/active-dynamic-model.json", `${reason} Loaded fallback dynamic model.`).catch(() => ({
+    model: null,
+    message: `${reason} No fallback dynamic model was found at /models/active-dynamic-model.json.`,
+  }));
+}
+
 async function fetchModelJson(url: string, message: string): Promise<{ model: KnnModel | null; message: string }> {
   const response = await fetch(url, { cache: "no-store" });
 
@@ -445,4 +645,17 @@ async function fetchModelJson(url: string, message: string): Promise<{ model: Kn
   }
 
   return { model: (await response.json()) as KnnModel, message };
+}
+
+async function fetchDynamicModelJson(
+  url: string,
+  message: string,
+): Promise<{ model: DynamicSequenceModel | null; message: string }> {
+  const response = await fetch(url, { cache: "no-store" });
+
+  if (!response.ok) {
+    throw new Error(`Dynamic model request failed with ${response.status}.`);
+  }
+
+  return { model: (await response.json()) as DynamicSequenceModel, message };
 }

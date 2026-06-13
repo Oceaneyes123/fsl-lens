@@ -1,0 +1,39 @@
+{
+  "generatedAt": "2026-06-11T15:49:07.656Z",
+  "source": "Supabase dynamic_samples table via .env.local public key",
+  "modelFile": "public/models/active-dynamic-model.json",
+  "dataset": {
+    "usableSampleCount": 12,
+    "countsByLabel": {
+      "alphabet_J": 12
+    },
+    "approvedCount": 0,
+    "pendingCount": 12,
+    "labelsCovered": [
+      "alphabet_J"
+    ]
+  },
+  "validation": {
+    "method": "1-nearest-neighbor over normalized landmark sequences with frame deltas",
+    "leaveOneOut": {
+      "correct": 12,
+      "total": 12,
+      "accuracy": 1
+    },
+    "deterministicStratifiedHoldout": {
+      "trainCount": 9,
+      "testCount": 3,
+      "correct": 3,
+      "accuracy": 1
+    },
+    "confusion": {
+      "alphabet_J": {
+        "alphabet_J": 12
+      }
+    },
+    "caveats": [
+      "This baseline is browser-exportable and should be replaced by LSTM/GRU or Temporal CNN after enough signer-diverse clips exist.",
+      "No signer-based split is possible without signer metadata."
+    ]
+  }
+}

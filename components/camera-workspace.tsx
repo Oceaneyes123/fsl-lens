@@ -1,13 +1,15 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Camera, Check, HandMetal, Plus, RefreshCcw, Save, Settings, X } from "lucide-react";
+import { Check, HandMetal, Plus, RefreshCcw, Save, Settings, X } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { CameraTracker, type LandmarkSnapshot } from "@/components/camera-tracker";
 import { createWordSign, formatPredictedSign, signs } from "@/lib/signs";
+import { createDynamicFrameBuffer, summarizeDynamicRecording, type RecordedDynamicFrame } from "@/lib/dynamic-capture";
+import { recognizeDynamicSequence, type DynamicSequenceModel } from "@/lib/dynamic-recognition";
 import { createPredictionTracker } from "@/lib/prediction";
 import { validateSampleQuality } from "@/lib/sample-quality";
-import { loadRecognitionModel, saveFeedback, saveLandmarkSample } from "@/lib/supabase";
+import { loadDynamicRecognitionModel, loadRecognitionModel, saveDynamicLandmarkSample, saveFeedback, saveLandmarkSample } from "@/lib/supabase";
 import { buildFeedbackInsert } from "@/lib/feedback";
 import { areLandmarksInsideGuideFrame, areLandmarksSteady, type NormalizedLandmark } from "@/lib/landmarks";
 import {
@@ -17,6 +19,7 @@ import {
   type KnnModel,
   type RecognitionResult,
 } from "@/lib/recognition";
+import { recognizeVisibleSign } from "@/lib/recognize-mode-recognition";
 
 type CameraWorkspaceProps = {
   mode: "recognize" | "capture" | "practice";
@@ -35,20 +38,33 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   const [sessionId, setSessionId] = useState("");
   const [lastSampleId, setLastSampleId] = useState<string | null>(null);
   const [model, setModel] = useState<KnnModel | null>(null);
+  const [dynamicModel, setDynamicModel] = useState<DynamicSequenceModel | null>(null);
   const [modelMessage, setModelMessage] = useState("Loading recognition model...");
+  const [dynamicModelMessage, setDynamicModelMessage] = useState("Loading dynamic recognition model...");
   const [recognition, setRecognition] = useState<RecognitionResult>(() =>
     createNoModelResult("Loading recognition model..."),
   );
   const [insideGuideFrame, setInsideGuideFrame] = useState(false);
   const [steady, setSteady] = useState(false);
-  const [practiceResult, setPracticeResult] = useState<"idle" | "correct" | "wrong">("idle");
+  const [practiceCameraOpen, setPracticeCameraOpen] = useState(false);
+  const [isRecordingDynamicSample, setIsRecordingDynamicSample] = useState(false);
+  const [dynamicRecording, setDynamicRecording] = useState<RecordedDynamicFrame[]>([]);
   const trackerRef = useRef(createPredictionTracker({ requiredFrames: 5 }));
+  const dynamicTrackerRef = useRef(createPredictionTracker({ requiredFrames: 2 }));
   const historyRef = useRef<NormalizedLandmark[][][]>([]);
+  const dynamicFrameBufferRef = useRef(createDynamicFrameBuffer({ maxFrames: 45 }));
 
   const availableSigns = useMemo(() => [...signs, ...customSigns], [customSigns]);
+  const practiceSigns = useMemo(
+    () => availableSigns.filter((sign) => sign.type === "alphabet" || sign.type === "number"),
+    [availableSigns],
+  );
   const selectedSign = availableSigns.find((sign) => sign.label === selectedLabel) ?? availableSigns[0];
   const isPractice = mode === "practice";
-  const requiredStableFrames = model?.thresholdConfig.requiredStableFrames ?? 5;
+  const isDynamicSign = selectedSign?.modality === "dynamic";
+  const requiredStableFrames = isDynamicSign
+    ? (dynamicModel?.thresholdConfig.requiredStableSequences ?? 2)
+    : (model?.thresholdConfig.requiredStableFrames ?? 5);
   const predictedSign = formatPredictedSign(recognition.predictedLabel);
 
   const quality = snapshot
@@ -59,12 +75,44 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
         landmarksVisible: snapshot.landmarks.length > 0,
         insideGuideFrame,
         steady,
+        requireSteady: !isDynamicSign,
       })
     : null;
 
   useEffect(() => {
     setSessionId(getOrCreateSessionId());
   }, []);
+
+  useEffect(() => {
+    if (mode !== "capture") {
+      return;
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target;
+      const isEditableTarget = isEditableEventTarget(target);
+
+      if (event.repeat || isEditableTarget) {
+        return;
+      }
+
+      if (event.code === "Space") {
+        event.preventDefault();
+        void handleSaveSample();
+        return;
+      }
+
+      const shortcutLabel = findCaptureShortcutLabel(event.key, availableSigns);
+      if (shortcutLabel) {
+        event.preventDefault();
+        setSelectedLabel(shortcutLabel);
+        setSaveMessage("");
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [availableSigns, mode, handleSaveSample]);
 
   useEffect(() => {
     let active = true;
@@ -87,9 +135,36 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
+    loadDynamicRecognitionModel().then((result) => {
+      if (!active) {
+        return;
+      }
+
+      setDynamicModel(result.model);
+      setDynamicModelMessage(result.message);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    trackerRef.current.update(null);
+    dynamicTrackerRef.current.update(null);
+    dynamicFrameBufferRef.current.clear();
+    setDynamicRecording([]);
+    setIsRecordingDynamicSample(false);
+  }, [selectedLabel]);
+
+  useEffect(() => {
     if (!snapshot) {
       historyRef.current = [];
       trackerRef.current.update(null);
+      dynamicTrackerRef.current.update(null);
+      dynamicFrameBufferRef.current.clear();
       setInsideGuideFrame(false);
       setSteady(false);
       setRecognition(model ? createIdleRecognitionResult() : createNoModelResult(modelMessage));
@@ -101,6 +176,79 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
     const nextSteady = areLandmarksSteady(historyRef.current);
     setInsideGuideFrame(nextInsideGuideFrame);
     setSteady(nextSteady);
+
+    if (mode === "recognize") {
+      dynamicFrameBufferRef.current.add(snapshot.landmarks);
+      const rawRecognition = recognizeVisibleSign({
+        model,
+        dynamicModel,
+        landmarks: snapshot.landmarks,
+        dynamicFrames: dynamicFrameBufferRef.current.frames(),
+        handCount: snapshot.handCount,
+        handedness: snapshot.handedness,
+      });
+      const stableCandidate = rawRecognition.state === "confirmed" ? rawRecognition.predictedLabel : null;
+      const stableState = trackerRef.current.update(stableCandidate);
+      const confirmed = rawRecognition.state === "confirmed" && stableState.stable;
+
+      setRecognition({
+        ...rawRecognition,
+        state: confirmed ? "confirmed" : rawRecognition.state === "confirmed" ? "uncertain" : rawRecognition.state,
+        stable: stableState.stable,
+        stableFrameCount: stableState.count,
+        message: confirmed
+          ? rawRecognition.message
+          : rawRecognition.state === "confirmed"
+            ? `Hold or repeat for confirmation (${stableState.count}/${requiredStableFrames}).`
+            : rawRecognition.message,
+      });
+      return;
+    }
+
+    if (isDynamicSign) {
+      dynamicFrameBufferRef.current.add(snapshot.landmarks);
+
+      if (isRecordingDynamicSample) {
+        setDynamicRecording((frames) =>
+          [...frames, { frame: snapshot.landmarks, confidence: snapshot.confidence }].slice(-90),
+        );
+      }
+
+      if (!dynamicModel) {
+        dynamicTrackerRef.current.update(null);
+        setRecognition(createNoModelResult(dynamicModelMessage));
+        return;
+      }
+
+      const frames = dynamicFrameBufferRef.current.frames();
+      if (frames.length < 2) {
+        dynamicTrackerRef.current.update(null);
+        setRecognition(createIdleRecognitionResult("Move through the full sign inside the guide frame."));
+        return;
+      }
+
+      const rawRecognition = recognizeDynamicSequence({
+        model: dynamicModel,
+        frames,
+        handCount: snapshot.handCount,
+      });
+      const stableCandidate = rawRecognition.state === "confirmed" ? rawRecognition.predictedLabel : null;
+      const stableState = dynamicTrackerRef.current.update(stableCandidate);
+      const confirmed = rawRecognition.state === "confirmed" && stableState.stable;
+
+      setRecognition({
+        ...rawRecognition,
+        state: confirmed ? "confirmed" : rawRecognition.state === "confirmed" ? "uncertain" : rawRecognition.state,
+        stable: stableState.stable,
+        stableFrameCount: stableState.count,
+        message: confirmed
+          ? "Dynamic prediction confirmed."
+          : rawRecognition.state === "confirmed"
+            ? `Repeat the motion for confirmation (${stableState.count}/${requiredStableFrames}).`
+            : rawRecognition.message,
+      });
+      return;
+    }
 
     if (!model) {
       trackerRef.current.update(null);
@@ -129,9 +277,14 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
           ? `Hold steady for confirmation (${stableState.count}/${requiredStableFrames}).`
           : rawRecognition.message,
     });
-  }, [model, modelMessage, requiredStableFrames, snapshot]);
+  }, [dynamicModel, dynamicModelMessage, isDynamicSign, isRecordingDynamicSample, model, modelMessage, requiredStableFrames, snapshot]);
 
   async function handleSaveSample() {
+    if (isDynamicSign) {
+      await handleSaveDynamicSample();
+      return;
+    }
+
     if (!snapshot) {
       setSaveMessage("Start the camera and place your hand inside the frame before saving.");
       return;
@@ -159,6 +312,40 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
     setSaveMessage(result.ok ? "Landmark sample saved to Supabase." : result.message);
   }
 
+  async function handleSaveDynamicSample() {
+    if (!snapshot || dynamicRecording.length < 2) {
+      setSaveMessage("Record the full dynamic sign before saving.");
+      return;
+    }
+
+    const recording = summarizeDynamicRecording(dynamicRecording);
+    const result = await saveDynamicLandmarkSample({
+      sign_id: selectedSign.id,
+      session_id: window.crypto.randomUUID(),
+      frames_json: recording.frames,
+      frame_count: recording.frameCount,
+      fps: 15,
+      hand_count: snapshot.handCount,
+      handedness: snapshot.handedness,
+      detector_confidence: recording.averageConfidence,
+      camera_type: "browser_webcam",
+      lighting_note: "not_recorded",
+      quality_status: quality?.status ?? "rejected",
+      review_status: "pending",
+      signer_id: null,
+      consent_raw_image: false,
+      raw_image_url: null,
+    });
+
+    if (result.ok) {
+      setLastSampleId(null);
+      setDynamicRecording([]);
+      setIsRecordingDynamicSample(false);
+    }
+
+    setSaveMessage(result.ok ? "Dynamic landmark sequence saved to Supabase." : result.message);
+  }
+
   async function handleFeedback(wasCorrect: boolean) {
     if (!sessionId) {
       setFeedbackMessage("Feedback is not ready until the anonymous session starts.");
@@ -178,12 +365,6 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
     );
 
     setFeedbackMessage(result.message);
-  }
-
-  function chooseRandomSign() {
-    const next = availableSigns[Math.floor(Math.random() * availableSigns.length)];
-    setSelectedLabel(next.label);
-    setPracticeResult("idle");
   }
 
   function handleAddWordSign(event: React.FormEvent<HTMLFormElement>) {
@@ -210,13 +391,89 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
     setWordMessage(`${nextSign.displayName} added to the training list.`);
   }
 
-  function handleCheckSign() {
-    if (recognition.state !== "confirmed" || !recognition.stable) {
-      setPracticeResult("wrong");
-      return;
-    }
+  if (mode === "recognize") {
+    return (
+      <AppShell>
+        <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_430px]">
+          <section className="rounded-lg border border-line bg-white p-4 shadow-soft">
+            <CameraTracker autoStart mirror={mirror} overlay={overlay} onSnapshot={setSnapshot} />
+          </section>
 
-    setPracticeResult(recognition.predictedLabel === selectedSign.label ? "correct" : "wrong");
+          <section className="flex min-h-[360px] flex-col items-center justify-center rounded-lg border border-line bg-white p-8 text-center shadow-soft">
+            <p className="text-base font-semibold uppercase tracking-wide text-slate-500">{predictedSign.type}</p>
+            <p
+              data-testid="predicted-sign-value"
+              className={`mt-4 font-bold leading-none text-ink ${
+                predictedSign.value === "Unknown" ? "text-5xl sm:text-6xl" : "text-8xl sm:text-9xl"
+              }`}
+            >
+              {predictedSign.value}
+            </p>
+          </section>
+        </div>
+      </AppShell>
+    );
+  }
+
+  if (mode === "practice") {
+    const practiceHasVerdict = Boolean(practiceCameraOpen && snapshot && recognition.state !== "unknown" && recognition.state !== "no_model");
+    const practiceIsCorrect =
+      practiceHasVerdict &&
+      recognition.state === "confirmed" &&
+      recognition.stable &&
+      recognition.predictedLabel === selectedSign.label;
+
+    return (
+      <AppShell>
+        <div className="space-y-5">
+          <section className="rounded-lg border border-line bg-white p-5 shadow-soft">
+            <h1 className="text-xl font-semibold text-ink">Practice Sign</h1>
+            <div className="mt-4 grid grid-cols-6 gap-2 sm:grid-cols-9 lg:grid-cols-12">
+              {practiceSigns.map((sign) => (
+                <button
+                  key={sign.label}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLabel(sign.label);
+                    setPracticeCameraOpen(true);
+                  }}
+                  className={`flex aspect-square items-center justify-center rounded-md border text-2xl font-bold ${
+                    sign.label === selectedSign.label && practiceCameraOpen
+                      ? "border-teal bg-teal text-white"
+                      : "border-line bg-white text-ink"
+                  }`}
+                  aria-pressed={sign.label === selectedSign.label && practiceCameraOpen}
+                >
+                  {sign.displayName}
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {practiceCameraOpen ? (
+            <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+              <section className="rounded-lg border border-line bg-white p-4 shadow-soft">
+                <CameraTracker autoStart mirror={mirror} overlay={overlay} onSnapshot={setSnapshot} />
+              </section>
+              <section className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-line bg-white p-6 text-center shadow-soft">
+                <p className="text-7xl font-bold leading-none text-ink sm:text-8xl">{selectedSign.displayName}</p>
+                <div className="mt-6 flex h-36 w-36 items-center justify-center">
+                  {practiceHasVerdict ? (
+                    practiceIsCorrect ? (
+                      <Check className="h-32 w-32 text-teal" strokeWidth={3} aria-label="Correct" />
+                    ) : (
+                      <X className="h-32 w-32 text-coral" strokeWidth={3} aria-label="Incorrect" />
+                    )
+                  ) : (
+                    <div className="h-24 w-24 rounded-full border-4 border-dashed border-slate-300" aria-label="Waiting" />
+                  )}
+                </div>
+              </section>
+            </div>
+          ) : null}
+        </div>
+      </AppShell>
+    );
   }
 
   return (
@@ -225,9 +482,7 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
         <section className="rounded-lg border border-line bg-white p-4 shadow-soft">
           <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
             <div>
-              <h1 className="text-xl font-semibold text-ink">
-                {mode === "capture" ? "Dataset Capture" : mode === "practice" ? "Practice Sign" : "Recognize Sign"}
-              </h1>
+              <h1 className="text-xl font-semibold text-ink">Dataset Capture</h1>
             </div>
             <div className="flex gap-2">
               <button
@@ -249,7 +504,7 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
             </div>
           </div>
 
-          <CameraTracker mirror={mirror} overlay={overlay} onSnapshot={setSnapshot} />
+          <CameraTracker autoStart mirror={mirror} overlay={overlay} onSnapshot={setSnapshot} />
 
           <div
             data-testid="predicted-sign-display"
@@ -340,33 +595,29 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
           </section>
 
           <section className="rounded-lg border border-line bg-white p-5 shadow-soft">
-            <h2 className="text-lg font-semibold text-ink">
-              {mode === "capture" ? "Capture sample" : "Practice target"}
-            </h2>
-            {mode === "capture" ? (
-              <form onSubmit={handleAddWordSign} className="mt-4">
-                <label className="block text-sm font-medium text-slate-700" htmlFor="word-sign">
-                  Add word sign
-                </label>
-                <div className="mt-2 flex gap-2">
-                  <input
-                    id="word-sign"
-                    value={wordInput}
-                    onChange={(event) => setWordInput(event.target.value)}
-                    placeholder="Example: Thank you"
-                    className="h-11 min-w-0 flex-1 rounded-md border border-line bg-white px-3 text-sm text-ink"
-                  />
-                  <button
-                    type="submit"
-                    className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-ink px-3 text-sm font-semibold text-white"
-                  >
-                    <Plus className="h-4 w-4" aria-hidden="true" />
-                    Add
-                  </button>
-                </div>
-                {wordMessage ? <p className="mt-2 text-sm leading-6 text-slate-600">{wordMessage}</p> : null}
-              </form>
-            ) : null}
+            <h2 className="text-lg font-semibold text-ink">Capture sample</h2>
+            <form onSubmit={handleAddWordSign} className="mt-4">
+              <label className="block text-sm font-medium text-slate-700" htmlFor="word-sign">
+                Add word sign
+              </label>
+              <div className="mt-2 flex gap-2">
+                <input
+                  id="word-sign"
+                  value={wordInput}
+                  onChange={(event) => setWordInput(event.target.value)}
+                  placeholder="Example: Thank you"
+                  className="h-11 min-w-0 flex-1 rounded-md border border-line bg-white px-3 text-sm text-ink"
+                />
+                <button
+                  type="submit"
+                  className="inline-flex h-11 items-center justify-center gap-2 rounded-md bg-ink px-3 text-sm font-semibold text-white"
+                >
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Add
+                </button>
+              </div>
+              {wordMessage ? <p className="mt-2 text-sm leading-6 text-slate-600">{wordMessage}</p> : null}
+            </form>
             <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="sign">
               Sign label
             </label>
@@ -382,56 +633,49 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
                 </option>
               ))}
             </select>
-            {isPractice ? (
-              <div className="mt-4 rounded-md border border-line bg-mist p-3">
-                <p className="text-sm font-semibold text-ink">
-                  {practiceResult === "idle"
-                    ? "Waiting for check"
-                    : practiceResult === "correct"
-                      ? "Correct"
-                      : "Try again"}
+            {isDynamicSign ? (
+              <div className="mt-3 rounded-md border border-line bg-mist p-3">
+                <p className="text-sm font-semibold text-ink">Dynamic sign</p>
+                <p className="mt-1 text-sm leading-6 text-slate-700">
+                  {`${dynamicRecording.length} frame(s) recorded.`}
                 </p>
               </div>
             ) : null}
-            {mode === "capture" ? (
+            <div className="mt-4 grid gap-2">
+              {isDynamicSign ? (
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDynamicRecording([]);
+                      setIsRecordingDynamicSample(true);
+                      setSaveMessage("Recording dynamic sign...");
+                    }}
+                    className="h-10 rounded-md border border-line text-sm font-semibold text-teal"
+                  >
+                    Start
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsRecordingDynamicSample(false);
+                      setSaveMessage(`Recording stopped with ${dynamicRecording.length} frame(s).`);
+                    }}
+                    className="h-10 rounded-md border border-line text-sm font-semibold text-coral"
+                  >
+                    Stop
+                  </button>
+                </div>
+              ) : null}
               <button
                 type="button"
                 onClick={handleSaveSample}
-                className="mt-4 inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-teal text-sm font-semibold text-white"
+                className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-teal text-sm font-semibold text-white"
               >
                 <Save className="h-4 w-4" aria-hidden="true" />
-                Save Landmark Sample
+                {isDynamicSign ? "Save Dynamic Sequence" : "Save Landmark Sample"}
               </button>
-            ) : (
-              <div className="mt-4 grid gap-2">
-                <button
-                  type="button"
-                  onClick={handleCheckSign}
-                  className="inline-flex h-11 w-full items-center justify-center gap-2 rounded-md bg-teal text-sm font-semibold text-white"
-                >
-                  <Camera className="h-4 w-4" aria-hidden="true" />
-                  Check Sign
-                </button>
-                {isPractice ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <button
-                      type="button"
-                      onClick={() => setPracticeResult("idle")}
-                      className="h-10 rounded-md border border-line text-sm font-semibold text-slate-700"
-                    >
-                      Try Again
-                    </button>
-                    <button
-                      type="button"
-                      onClick={chooseRandomSign}
-                      className="h-10 rounded-md border border-line text-sm font-semibold text-teal"
-                    >
-                      Next Sign
-                    </button>
-                  </div>
-                ) : null}
-              </div>
-            )}
+            </div>
             {saveMessage ? <p className="mt-3 text-sm leading-6 text-slate-600">{saveMessage}</p> : null}
           </section>
         </aside>
@@ -451,4 +695,27 @@ function getOrCreateSessionId() {
   const next = window.crypto.randomUUID();
   window.sessionStorage.setItem(key, next);
   return next;
+}
+
+function isEditableEventTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLInputElement ||
+    target instanceof HTMLTextAreaElement ||
+    target instanceof HTMLSelectElement ||
+    (target instanceof HTMLElement && target.isContentEditable)
+  );
+}
+
+function findCaptureShortcutLabel(key: string, availableSigns: typeof signs) {
+  const normalizedKey = key.length === 1 ? key.toUpperCase() : "";
+
+  if (/^[A-Z]$/.test(normalizedKey)) {
+    return availableSigns.find((sign) => sign.type === "alphabet" && sign.displayName === normalizedKey)?.label ?? null;
+  }
+
+  if (/^[0-9]$/.test(key)) {
+    return availableSigns.find((sign) => sign.type === "number" && sign.displayName === key)?.label ?? null;
+  }
+
+  return null;
 }

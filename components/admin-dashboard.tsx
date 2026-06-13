@@ -3,8 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { BarChart3, Check, CheckCheck, CheckCircle2, Database, Layers, MessageSquare, RefreshCw, ShieldAlert, Trash2, X } from "lucide-react";
 import {
+  deleteDynamicSample,
   deleteSample,
   loadAdminData,
+  updateDynamicSampleReviewStatus,
+  updateDynamicSampleReviewStatuses,
   updateSampleReviewStatus,
   updateSampleReviewStatuses,
   type AdminCount,
@@ -22,6 +25,7 @@ const emptyStats: AdminStats = {
   feedbackTotal: 0,
   modelVersionTotal: 0,
   datasetVersionTotal: 0,
+  dynamicSampleTotal: 0,
   qualityCounts: qualityOptions.map((label) => ({ label, count: 0 })),
   reviewCounts: reviewOptions.map((label) => ({ label, count: 0 })),
   feedbackCounts: ["correct", "wrong", "unmarked"].map((label) => ({ label, count: 0 })),
@@ -33,6 +37,7 @@ export function AdminDashboard() {
   const [signId, setSignId] = useState("");
   const [qualityStatus, setQualityStatus] = useState("");
   const [reviewStatus, setReviewStatus] = useState("");
+  const [sampleTab, setSampleTab] = useState<"static" | "dynamic">("static");
   const [adminData, setAdminData] = useState<AdminData | null>(null);
   const [message, setMessage] = useState("Loading admin data...");
   const [loading, setLoading] = useState(false);
@@ -42,6 +47,7 @@ export function AdminDashboard() {
   const stats = adminData?.stats ?? emptyStats;
   const latestModel = adminData?.modelVersions[0];
   const latestDataset = adminData?.datasetVersions[0];
+  const activeSampleTotal = sampleTab === "dynamic" ? stats.dynamicSampleTotal : stats.sampleTotal;
   const sampleQualityRate = useMemo(() => {
     const cleanSamples = stats.qualityCounts.find((item) => item.label === "clean")?.count ?? 0;
     return stats.sampleTotal === 0 ? 0 : Math.round((cleanSamples / stats.sampleTotal) * 100);
@@ -83,9 +89,41 @@ export function AdminDashboard() {
     setDeletingSampleId(null);
   }
 
+  async function handleDeleteDynamicSample(sampleId: string, signId: string) {
+    const confirmed = window.confirm(`Delete this ${signId} dynamic sample permanently?`);
+
+    if (!confirmed) {
+      return;
+    }
+
+    setDeletingSampleId(sampleId);
+    const result = await deleteDynamicSample(sampleId);
+    setMessage(result.message);
+
+    if (result.ok) {
+      await refreshAdminData();
+      setMessage(result.message);
+    }
+
+    setDeletingSampleId(null);
+  }
+
   async function handleReviewSample(sampleId: string, status: Exclude<SampleReviewStatus, "pending">) {
     setReviewingSampleId(sampleId);
     const result = await updateSampleReviewStatus(sampleId, status);
+    setMessage(result.message);
+
+    if (result.ok) {
+      await refreshAdminData();
+      setMessage(result.message);
+    }
+
+    setReviewingSampleId(null);
+  }
+
+  async function handleReviewDynamicSample(sampleId: string, status: Exclude<SampleReviewStatus, "pending">) {
+    setReviewingSampleId(sampleId);
+    const result = await updateDynamicSampleReviewStatus(sampleId, status);
     setMessage(result.message);
 
     if (result.ok) {
@@ -106,12 +144,20 @@ export function AdminDashboard() {
     }
 
     setApprovingAll(true);
-    const result = await updateSampleReviewStatuses({
-      reviewStatus: "approved",
-      signId: signId || undefined,
-      qualityStatus: qualityStatus || undefined,
-      currentReviewStatus: reviewStatus || undefined,
-    });
+    const result =
+      sampleTab === "dynamic"
+        ? await updateDynamicSampleReviewStatuses({
+            reviewStatus: "approved",
+            signId: signId || undefined,
+            qualityStatus: qualityStatus || undefined,
+            currentReviewStatus: reviewStatus || undefined,
+          })
+        : await updateSampleReviewStatuses({
+            reviewStatus: "approved",
+            signId: signId || undefined,
+            qualityStatus: qualityStatus || undefined,
+            currentReviewStatus: reviewStatus || undefined,
+          });
     setMessage(result.message);
 
     if (result.ok) {
@@ -148,7 +194,12 @@ export function AdminDashboard() {
       </div>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <StatCard icon={Database} label="Samples" value={stats.sampleTotal} detail={`${sampleQualityRate}% clean`} />
+        <StatCard
+          icon={Database}
+          label={sampleTab === "dynamic" ? "Dynamic samples" : "Static samples"}
+          value={activeSampleTotal}
+          detail={sampleTab === "dynamic" ? "Sequence captures" : `${sampleQualityRate}% clean`}
+        />
         <StatCard icon={MessageSquare} label="Feedback" value={stats.feedbackTotal} detail={`${feedbackCorrectRate}% correct`} />
         <StatCard icon={Layers} label="Dataset versions" value={stats.datasetVersionTotal} detail={latestDataset?.version_name ?? "No dataset"} />
         <StatCard icon={BarChart3} label="Model versions" value={stats.modelVersionTotal} detail={latestModel?.status ?? "No model"} />
@@ -246,67 +297,97 @@ export function AdminDashboard() {
         </section>
       </section>
 
-      <DataPanel
-        title="Samples"
-        empty="No samples match the current filters."
-        action={
+      <section className="overflow-hidden rounded-lg border border-line bg-white shadow-soft">
+        <div className="flex flex-col justify-between gap-3 border-b border-line px-5 py-4 sm:flex-row sm:items-center">
+          <div>
+            <h2 className="text-lg font-semibold text-ink">Samples</h2>
+            <div className="mt-3 inline-flex rounded-md border border-line bg-white p-1">
+              <button
+                type="button"
+                onClick={() => setSampleTab("static")}
+                className={`h-9 rounded px-3 text-sm font-semibold ${
+                  sampleTab === "static" ? "bg-teal text-white" : "text-slate-700"
+                }`}
+              >
+                Static ({stats.sampleTotal})
+              </button>
+              <button
+                type="button"
+                onClick={() => setSampleTab("dynamic")}
+                className={`h-9 rounded px-3 text-sm font-semibold ${
+                  sampleTab === "dynamic" ? "bg-teal text-white" : "text-slate-700"
+                }`}
+              >
+                Dynamic ({stats.dynamicSampleTotal})
+              </button>
+            </div>
+          </div>
           <button
             type="button"
             onClick={handleApproveAllSamples}
-            disabled={approvingAll || loading || stats.sampleTotal === 0 || reviewStatus === "approved"}
+            disabled={approvingAll || loading || activeSampleTotal === 0 || reviewStatus === "approved"}
             className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-line px-3 text-sm font-semibold text-teal transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             <CheckCheck className="h-4 w-4" aria-hidden="true" />
             Approve all
           </button>
-        }
-      >
-        {(adminData?.samples ?? []).map((sample) => (
-          <DataRow
-            key={sample.id}
-            columns={[
-              sample.sign_id,
-              sample.quality_status,
-              sample.review_status,
-              `${Math.round(sample.detector_confidence * 100)}% confidence`,
-            ]}
-            action={
-              <div className="flex gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleReviewSample(sample.id, "approved")}
-                  disabled={reviewingSampleId === sample.id || sample.review_status === "approved"}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-teal transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  title={`Approve ${sample.sign_id} sample`}
-                  aria-label={`Approve ${sample.sign_id} sample`}
-                >
-                  <Check className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleReviewSample(sample.id, "rejected")}
-                  disabled={reviewingSampleId === sample.id || sample.review_status === "rejected"}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  title={`Reject ${sample.sign_id} sample`}
-                  aria-label={`Reject ${sample.sign_id} sample`}
-                >
-                  <X className="h-4 w-4" aria-hidden="true" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleDeleteSample(sample.id, sample.sign_id)}
-                  disabled={deletingSampleId === sample.id}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
-                  title={`Delete ${sample.sign_id} sample`}
-                  aria-label={`Delete ${sample.sign_id} sample`}
-                >
-                  <Trash2 className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </div>
-            }
-          />
-        ))}
-      </DataPanel>
+        </div>
+        <div className="divide-y divide-line">
+          {sampleTab === "static" ? (
+            (adminData?.samples ?? []).length > 0 ? (
+              (adminData?.samples ?? []).map((sample) => (
+                <DataRow
+                  key={sample.id}
+                  columns={[
+                    sample.sign_id,
+                    sample.quality_status,
+                    sample.review_status,
+                    `${Math.round(sample.detector_confidence * 100)}% confidence`,
+                  ]}
+                  action={
+                    <SampleRowActions
+                      sampleId={sample.id}
+                      signId={sample.sign_id}
+                      reviewStatus={sample.review_status}
+                      reviewingSampleId={reviewingSampleId}
+                      deletingSampleId={deletingSampleId}
+                      onReview={handleReviewSample}
+                      onDelete={handleDeleteSample}
+                    />
+                  }
+                />
+              ))
+            ) : (
+              <p className="px-5 py-4 text-sm text-slate-600">No static samples match the current filters.</p>
+            )
+          ) : (adminData?.dynamicSamples ?? []).length > 0 ? (
+            (adminData?.dynamicSamples ?? []).map((sample) => (
+              <DataRow
+                key={sample.id}
+                columns={[
+                  sample.sign_id,
+                  `${sample.frame_count} frames`,
+                  sample.review_status,
+                  `${Math.round(sample.detector_confidence * 100)}% confidence`,
+                ]}
+                action={
+                  <SampleRowActions
+                    sampleId={sample.id}
+                    signId={sample.sign_id}
+                    reviewStatus={sample.review_status}
+                    reviewingSampleId={reviewingSampleId}
+                    deletingSampleId={deletingSampleId}
+                    onReview={handleReviewDynamicSample}
+                    onDelete={handleDeleteDynamicSample}
+                  />
+                }
+              />
+            ))
+          ) : (
+            <p className="px-5 py-4 text-sm text-slate-600">No dynamic samples match the current filters.</p>
+          )}
+        </div>
+      </section>
 
       <DataPanel title="Feedback" empty="No feedback has been submitted yet.">
         {(adminData?.feedback ?? []).map((feedback) => (
@@ -518,6 +599,59 @@ function DataPanel({
         {children.length > 0 ? children : <p className="px-5 py-4 text-sm text-slate-600">{empty}</p>}
       </div>
     </section>
+  );
+}
+
+function SampleRowActions({
+  sampleId,
+  signId,
+  reviewStatus,
+  reviewingSampleId,
+  deletingSampleId,
+  onReview,
+  onDelete,
+}: {
+  sampleId: string;
+  signId: string;
+  reviewStatus: string;
+  reviewingSampleId: string | null;
+  deletingSampleId: string | null;
+  onReview: (sampleId: string, status: Exclude<SampleReviewStatus, "pending">) => void;
+  onDelete: (sampleId: string, signId: string) => void;
+}) {
+  return (
+    <div className="flex gap-1">
+      <button
+        type="button"
+        onClick={() => onReview(sampleId, "approved")}
+        disabled={reviewingSampleId === sampleId || reviewStatus === "approved"}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-teal transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-50"
+        title={`Approve ${signId} sample`}
+        aria-label={`Approve ${signId} sample`}
+      >
+        <Check className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onReview(sampleId, "rejected")}
+        disabled={reviewingSampleId === sampleId || reviewStatus === "rejected"}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-coral transition hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50"
+        title={`Reject ${signId} sample`}
+        aria-label={`Reject ${signId} sample`}
+      >
+        <X className="h-4 w-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        onClick={() => onDelete(sampleId, signId)}
+        disabled={deletingSampleId === sampleId}
+        className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-line text-slate-500 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50"
+        title={`Delete ${signId} sample`}
+        aria-label={`Delete ${signId} sample`}
+      >
+        <Trash2 className="h-4 w-4" aria-hidden="true" />
+      </button>
+    </div>
   );
 }
 

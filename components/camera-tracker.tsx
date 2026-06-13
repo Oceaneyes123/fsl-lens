@@ -17,29 +17,39 @@ export type LandmarkSnapshot = {
 };
 
 type CameraTrackerProps = {
+  autoStart?: boolean;
   mirror: boolean;
   overlay: boolean;
   onSnapshot: (snapshot: LandmarkSnapshot | null) => void;
 };
 
-export function CameraTracker({ mirror, overlay, onSnapshot }: CameraTrackerProps) {
+export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }: CameraTrackerProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const rafRef = useRef<number | null>(null);
+  const startingRef = useRef(false);
+  const startRequestRef = useRef(0);
   const [status, setStatus] = useState("Camera is off.");
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    if (autoStart) {
+      void startCamera();
+    }
+
     return () => stopCamera();
   }, []);
 
   async function startCamera() {
-    if (!videoRef.current || !canvasRef.current) {
+    if (!videoRef.current || !canvasRef.current || streamRef.current || startingRef.current) {
       return;
     }
 
+    const requestId = startRequestRef.current + 1;
+    startRequestRef.current = requestId;
+    startingRef.current = true;
     setLoading(true);
     setStatus("Loading hand landmark model...");
 
@@ -61,10 +71,21 @@ export function CameraTracker({ mirror, overlay, onSnapshot }: CameraTrackerProp
         minTrackingConfidence: 0.6,
       });
 
+      if (startRequestRef.current !== requestId) {
+        return;
+      }
+
       const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+
+      if (startRequestRef.current !== requestId) {
+        stream.getTracks().forEach((track) => track.stop());
+        return;
+      }
+
       streamRef.current = stream;
       videoRef.current.srcObject = stream;
       await videoRef.current.play();
+      startingRef.current = false;
       setRunning(true);
       setLoading(false);
 
@@ -118,6 +139,11 @@ export function CameraTracker({ mirror, overlay, onSnapshot }: CameraTrackerProp
 
       drawFrame();
     } catch (error) {
+      if (startRequestRef.current !== requestId) {
+        return;
+      }
+
+      startingRef.current = false;
       setLoading(false);
       setRunning(false);
       setStatus(error instanceof Error ? error.message : "Unable to start camera.");
@@ -132,6 +158,8 @@ export function CameraTracker({ mirror, overlay, onSnapshot }: CameraTrackerProp
 
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    startRequestRef.current += 1;
+    startingRef.current = false;
     setRunning(false);
     onSnapshot(null);
   }
@@ -146,7 +174,7 @@ export function CameraTracker({ mirror, overlay, onSnapshot }: CameraTrackerProp
           {status}
         </div>
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
+      <div className="mt-4 flex flex-wrap items-center justify-center gap-3">
         <button
           type="button"
           onClick={running ? stopCamera : startCamera}
