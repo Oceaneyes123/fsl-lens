@@ -1,12 +1,12 @@
 {
-  "generatedAt": "2026-06-13T14:03:54.433Z",
+  "generatedAt": "2026-06-13T14:13:54.451Z",
   "source": "Supabase samples table via .env.local public key",
   "modelFile": "public/models/active-knn-model.json",
   "dataset": {
-    "usableSampleCount": 1000,
+    "usableSampleCount": 1310,
     "countsByLabel": {
-      "alphabet_A": 17,
-      "alphabet_B": 12,
+      "alphabet_A": 35,
+      "alphabet_B": 51,
       "alphabet_C": 12,
       "number_1": 12,
       "number_2": 11,
@@ -32,9 +32,15 @@
       "alphabet_V": 39,
       "alphabet_W": 34,
       "alphabet_X": 72,
-      "alphabet_Y": 45
+      "alphabet_Y": 45,
+      "number_4": 58,
+      "number_5": 36,
+      "number_6": 35,
+      "number_7": 42,
+      "number_8": 39,
+      "number_9": 43
     },
-    "approvedCount": 1000,
+    "approvedCount": 1310,
     "pendingCount": 0,
     "rejectedExcluded": true,
     "labelsCovered": [
@@ -65,35 +71,41 @@
       "number_1",
       "number_2",
       "number_3",
+      "number_4",
+      "number_5",
+      "number_6",
+      "number_7",
+      "number_8",
+      "number_9",
       "word_i_love_you"
     ]
   },
   "validation": {
     "method": "1-nearest-neighbor over normalized landmark vectors",
     "leaveOneOut": {
-      "correct": 947,
-      "total": 1000,
-      "accuracy": 0.947
+      "correct": 1197,
+      "total": 1310,
+      "accuracy": 0.91374
     },
     "deterministicStratifiedHoldout": {
-      "trainCount": 746,
-      "testCount": 254,
-      "correct": 241,
-      "accuracy": 0.948819
+      "trainCount": 976,
+      "testCount": 334,
+      "correct": 298,
+      "accuracy": 0.892216
     },
     "confusion": {
       "alphabet_A": {
-        "alphabet_A": 15,
+        "alphabet_A": 33,
         "alphabet_T": 1,
         "alphabet_S": 1
       },
       "alphabet_B": {
-        "alphabet_B": 11,
-        "alphabet_F": 1
+        "alphabet_B": 49,
+        "number_4": 2
       },
       "alphabet_C": {
         "alphabet_C": 11,
-        "alphabet_O": 1
+        "number_4": 1
       },
       "number_1": {
         "number_1": 11,
@@ -122,7 +134,8 @@
         "alphabet_O": 1
       },
       "alphabet_F": {
-        "alphabet_F": 37
+        "alphabet_F": 32,
+        "number_9": 5
       },
       "alphabet_G": {
         "alphabet_G": 51
@@ -186,8 +199,10 @@
         "alphabet_U": 3
       },
       "alphabet_W": {
-        "alphabet_W": 33,
-        "alphabet_R": 1
+        "alphabet_W": 28,
+        "number_6": 4,
+        "alphabet_R": 1,
+        "number_4": 1
       },
       "alphabet_X": {
         "alphabet_X": 72
@@ -195,6 +210,35 @@
       "alphabet_Y": {
         "alphabet_Y": 44,
         "alphabet_I": 1
+      },
+      "number_4": {
+        "number_4": 55,
+        "alphabet_B": 3
+      },
+      "number_5": {
+        "number_5": 34,
+        "number_4": 1,
+        "alphabet_B": 1
+      },
+      "number_6": {
+        "number_6": 25,
+        "alphabet_W": 8,
+        "alphabet_V": 2
+      },
+      "number_7": {
+        "number_7": 29,
+        "number_8": 12,
+        "alphabet_W": 1
+      },
+      "number_8": {
+        "number_8": 28,
+        "number_7": 11
+      },
+      "number_9": {
+        "number_9": 33,
+        "alphabet_F": 8,
+        "number_4": 1,
+        "alphabet_W": 1
       }
     },
     "caveats": [

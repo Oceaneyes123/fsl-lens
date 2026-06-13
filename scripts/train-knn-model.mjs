@@ -6,6 +6,7 @@ import { createClient } from "@supabase/supabase-js";
 const defaultModelPath = path.join("public", "models", "active-knn-model.json");
 const defaultReportPath = path.join("output", "training-report.json");
 const defaultEnvPath = ".env.local";
+const sampleColumns = "id, sign_id, hand_count, handedness, landmarks_json, quality_status, review_status, detector_confidence";
 
 export function readEnvFile(filePath = defaultEnvPath) {
   return Object.fromEntries(
@@ -62,15 +63,7 @@ export async function trainKnnModel({
   }
 
   const supabase = createClient(supabaseUrl, supabaseKey);
-  const { data, error } = await supabase
-    .from("samples")
-    .select("id, sign_id, hand_count, handedness, landmarks_json, quality_status, review_status, detector_confidence")
-    .eq("quality_status", "clean")
-    .order("created_at", { ascending: true });
-
-  if (error) {
-    throw new Error(error.message);
-  }
+  const data = await fetchCleanSamples(supabase);
 
   const usableSamples = createUsableSamples(data ?? []);
 
@@ -91,6 +84,30 @@ export async function trainKnnModel({
   writeJson(reportPath, report);
 
   return { model, report };
+}
+
+export async function fetchCleanSamples(supabase, { pageSize = 1000 } = {}) {
+  const rows = [];
+
+  for (let from = 0; ; from += pageSize) {
+    const to = from + pageSize - 1;
+    const { data, error } = await supabase
+      .from("samples")
+      .select(sampleColumns)
+      .eq("quality_status", "clean")
+      .order("created_at", { ascending: true })
+      .range(from, to);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    rows.push(...(data ?? []));
+
+    if (!data || data.length < pageSize) {
+      return rows;
+    }
+  }
 }
 
 function normalizeHand(hand) {
