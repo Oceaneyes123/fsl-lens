@@ -10,7 +10,6 @@ import { recognizeDynamicSequence, type DynamicSequenceModel } from "@/lib/dynam
 import { createPredictionTracker } from "@/lib/prediction";
 import { validateSampleQuality } from "@/lib/sample-quality";
 import { loadDynamicRecognitionModel, loadRecognitionModel, saveDynamicLandmarkSample, saveFeedback, saveLandmarkSample } from "@/lib/supabase";
-import { buildFeedbackInsert } from "@/lib/feedback";
 import { areLandmarksInsideGuideFrame, areLandmarksSteady, type NormalizedLandmark } from "@/lib/landmarks";
 import {
   createIdleRecognitionResult,
@@ -352,17 +351,15 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
       return;
     }
 
-    const result = await saveFeedback(
-      buildFeedbackInsert({
-        sessionId,
-        predictedLabel: recognition.predictedLabel,
-        expectedLabel: isPractice ? selectedSign.label : null,
-        confidence: recognition.confidence,
-        topPredictions: recognition.topPredictions,
-        wasCorrect,
-        sampleId: lastSampleId,
-      }),
-    );
+    const result = await saveFeedback({
+      session_id: sessionId,
+      predicted_sign_id: recognition.predictedLabel,
+      expected_sign_id: isPractice ? selectedSign.label : null,
+      confidence: recognition.confidence,
+      top_predictions_json: recognition.topPredictions,
+      was_correct: wasCorrect,
+      sample_id: lastSampleId,
+    });
 
     setFeedbackMessage(result.message);
   }

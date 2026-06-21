@@ -1,6 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { FeedbackInsert } from "./feedback";
+import type { Prediction } from "./prediction";
 import type { DynamicSequenceModel } from "./dynamic-recognition";
 import type { KnnModel } from "./recognition";
 import { signs } from "./signs";
@@ -18,6 +18,16 @@ type SampleInsert = {
   review_status: string;
   consent_raw_image: boolean;
   raw_image_url: string | null;
+};
+
+type FeedbackInsert = {
+  session_id: string;
+  predicted_sign_id: string | null;
+  expected_sign_id: string | null;
+  confidence: number | null;
+  top_predictions_json: Prediction[];
+  was_correct: boolean;
+  sample_id: string | null;
 };
 
 export type DynamicSampleInsert = {
@@ -191,109 +201,88 @@ export async function saveFeedback(feedback: FeedbackInsert): Promise<{ ok: bool
   return { ok: true, message: "Feedback saved." };
 }
 
-export async function deleteSample(sampleId: string): Promise<{ ok: boolean; message: string }> {
+async function deleteSampleFrom(table: "samples" | "dynamic_samples", label: "Sample" | "Dynamic sample", sampleId: string) {
   if (!hasSupabaseConfig()) {
     return {
       ok: false,
-      message:
-        "Sample deletion requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+      message: `${label} deletion requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.`,
     };
   }
 
   const supabase = createSupabaseClient();
-  const { error } = await supabase.from("samples").delete().eq("id", sampleId);
+  const { error } = await supabase.from(table).delete().eq("id", sampleId);
 
   if (error) {
     return { ok: false, message: error.message };
   }
 
-  return { ok: true, message: "Sample deleted." };
+  return { ok: true, message: `${label} deleted.` };
 }
 
-export async function deleteDynamicSample(sampleId: string): Promise<{ ok: boolean; message: string }> {
-  if (!hasSupabaseConfig()) {
-    return {
-      ok: false,
-      message:
-        "Dynamic sample deletion requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
-    };
-  }
-
-  const supabase = createSupabaseClient();
-  const { error } = await supabase.from("dynamic_samples").delete().eq("id", sampleId);
-
-  if (error) {
-    return { ok: false, message: error.message };
-  }
-
-  return { ok: true, message: "Dynamic sample deleted." };
+export function deleteSample(sampleId: string) {
+  return deleteSampleFrom("samples", "Sample", sampleId);
 }
 
-export async function updateSampleReviewStatus(
+export function deleteDynamicSample(sampleId: string) {
+  return deleteSampleFrom("dynamic_samples", "Dynamic sample", sampleId);
+}
+
+async function updateReviewStatus(
+  table: "samples" | "dynamic_samples",
+  label: "Sample" | "Dynamic sample",
   sampleId: string,
   reviewStatus: SampleReviewStatus,
-): Promise<{ ok: boolean; message: string }> {
+) {
   if (!hasSupabaseConfig()) {
     return {
       ok: false,
-      message:
-        "Sample review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+      message: `${label} review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.`,
     };
   }
 
   const supabase = createSupabaseClient();
-  const { error } = await supabase.from("samples").update({ review_status: reviewStatus }).eq("id", sampleId);
+  const { error } = await supabase.from(table).update({ review_status: reviewStatus }).eq("id", sampleId);
 
   if (error) {
     return { ok: false, message: error.message };
   }
 
-  return { ok: true, message: `Sample ${reviewStatus}.` };
+  return { ok: true, message: `${label} ${reviewStatus}.` };
 }
 
-export async function updateDynamicSampleReviewStatus(
-  sampleId: string,
-  reviewStatus: SampleReviewStatus,
-): Promise<{ ok: boolean; message: string }> {
-  if (!hasSupabaseConfig()) {
-    return {
-      ok: false,
-      message:
-        "Dynamic sample review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
-    };
-  }
-
-  const supabase = createSupabaseClient();
-  const { error } = await supabase.from("dynamic_samples").update({ review_status: reviewStatus }).eq("id", sampleId);
-
-  if (error) {
-    return { ok: false, message: error.message };
-  }
-
-  return { ok: true, message: `Dynamic sample ${reviewStatus}.` };
+export function updateSampleReviewStatus(sampleId: string, reviewStatus: SampleReviewStatus) {
+  return updateReviewStatus("samples", "Sample", sampleId, reviewStatus);
 }
 
-export async function updateDynamicSampleReviewStatuses({
-  reviewStatus,
-  signId,
-  qualityStatus,
-  currentReviewStatus,
-}: {
+export function updateDynamicSampleReviewStatus(sampleId: string, reviewStatus: SampleReviewStatus) {
+  return updateReviewStatus("dynamic_samples", "Dynamic sample", sampleId, reviewStatus);
+}
+
+type ReviewFilters = {
   reviewStatus: Exclude<SampleReviewStatus, "pending">;
   signId?: string;
   qualityStatus?: string;
   currentReviewStatus?: string;
-}): Promise<{ ok: boolean; message: string }> {
+};
+
+async function updateReviewStatuses(
+  table: "samples" | "dynamic_samples",
+  label: "samples" | "dynamic samples",
+  {
+  reviewStatus,
+  signId,
+  qualityStatus,
+  currentReviewStatus,
+}: ReviewFilters) {
   if (!hasSupabaseConfig()) {
     return {
       ok: false,
-      message:
-        "Dynamic sample review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
+      message: `${label === "samples" ? "Sample" : "Dynamic sample"} review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.`,
     };
   }
 
   const supabase = createSupabaseClient();
-  let query = supabase.from("dynamic_samples").update({ review_status: reviewStatus });
+  let query = supabase.from(table).update({ review_status: reviewStatus });
 
   if (signId) {
     query = query.eq("sign_id", signId);
@@ -313,50 +302,15 @@ export async function updateDynamicSampleReviewStatuses({
     return { ok: false, message: error.message };
   }
 
-  return { ok: true, message: `Matching dynamic samples ${reviewStatus}.` };
+  return { ok: true, message: `Matching ${label} ${reviewStatus}.` };
 }
 
-export async function updateSampleReviewStatuses({
-  reviewStatus,
-  signId,
-  qualityStatus,
-  currentReviewStatus,
-}: {
-  reviewStatus: Exclude<SampleReviewStatus, "pending">;
-  signId?: string;
-  qualityStatus?: string;
-  currentReviewStatus?: string;
-}): Promise<{ ok: boolean; message: string }> {
-  if (!hasSupabaseConfig()) {
-    return {
-      ok: false,
-      message:
-        "Sample review requires NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY in .env.local.",
-    };
-  }
+export function updateSampleReviewStatuses(filters: ReviewFilters) {
+  return updateReviewStatuses("samples", "samples", filters);
+}
 
-  const supabase = createSupabaseClient();
-  let query = supabase.from("samples").update({ review_status: reviewStatus });
-
-  if (signId) {
-    query = query.eq("sign_id", signId);
-  }
-
-  if (qualityStatus) {
-    query = query.eq("quality_status", qualityStatus);
-  }
-
-  if (currentReviewStatus) {
-    query = query.eq("review_status", currentReviewStatus);
-  }
-
-  const { error } = await query;
-
-  if (error) {
-    return { ok: false, message: error.message };
-  }
-
-  return { ok: true, message: `Matching samples ${reviewStatus}.` };
+export function updateDynamicSampleReviewStatuses(filters: ReviewFilters) {
+  return updateReviewStatuses("dynamic_samples", "dynamic samples", filters);
 }
 
 export async function loadRecognitionModel(): Promise<{ model: KnnModel | null; message: string }> {

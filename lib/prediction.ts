@@ -11,6 +11,21 @@ export type PredictionEvaluation = {
   message: string;
 };
 
+export function euclideanDistance(left: number[], right: number[]) {
+  let sum = 0;
+
+  for (let index = 0; index < left.length; index += 1) {
+    const delta = left[index] - right[index];
+    sum += delta * delta;
+  }
+
+  return Math.sqrt(sum / left.length);
+}
+
+export function distanceToConfidence(distance: number) {
+  return Math.max(0, Math.min(1, 1 / (1 + distance)));
+}
+
 type PredictionConfig = {
   confirmThreshold?: number;
   uncertainThreshold?: number;

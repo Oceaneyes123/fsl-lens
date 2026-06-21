@@ -15,7 +15,7 @@ vi.mock("@supabase/supabase-js", () => ({
   })),
 }));
 
-async function loadHasSupabaseConfig(env: NodeJS.ProcessEnv) {
+async function loadHasSupabaseConfig(env: Partial<NodeJS.ProcessEnv>) {
   vi.resetModules();
   process.env = { ...originalEnv, ...env };
   const module = await import("./supabase");

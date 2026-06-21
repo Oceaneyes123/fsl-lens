@@ -1,4 +1,4 @@
-import { evaluatePrediction, type Prediction, type PredictionState } from "./prediction";
+import { distanceToConfidence, euclideanDistance, evaluatePrediction, type Prediction, type PredictionState } from "./prediction";
 import { normalizeLandmarks, type NormalizedLandmark } from "./landmarks";
 
 export type ModelSample = {
@@ -87,19 +87,4 @@ export function createIdleRecognitionResult(message = "Place your hand inside th
     stableFrameCount: 0,
     message,
   };
-}
-
-function euclideanDistance(left: number[], right: number[]) {
-  let sum = 0;
-
-  for (let index = 0; index < left.length; index += 1) {
-    const delta = left[index] - right[index];
-    sum += delta * delta;
-  }
-
-  return Math.sqrt(sum / left.length);
-}
-
-function distanceToConfidence(distance: number) {
-  return Math.max(0, Math.min(1, 1 / (1 + distance)));
 }

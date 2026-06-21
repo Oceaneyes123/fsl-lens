@@ -1,5 +1,5 @@
 import { normalizeDynamicSequence, type LandmarkFrame } from "./dynamic-landmarks";
-import { evaluatePrediction, type PredictionState, type Prediction } from "./prediction";
+import { distanceToConfidence, euclideanDistance, evaluatePrediction, type PredictionState, type Prediction } from "./prediction";
 
 export type DynamicModelSample = {
   signLabel: string;
@@ -65,21 +65,6 @@ export function recognizeDynamicSequence({
     topPredictions: evaluation.topPredictions,
     message: evaluation.message,
   };
-}
-
-function euclideanDistance(left: number[], right: number[]) {
-  let sum = 0;
-
-  for (let index = 0; index < left.length; index += 1) {
-    const delta = left[index] - right[index];
-    sum += delta * delta;
-  }
-
-  return Math.sqrt(sum / left.length);
-}
-
-function distanceToConfidence(distance: number) {
-  return Math.max(0, Math.min(1, 1 / (1 + distance)));
 }
 
 function hasComparableMotion(sequenceMotion: number, sampleVector: number[], targetFrameCount: number) {
