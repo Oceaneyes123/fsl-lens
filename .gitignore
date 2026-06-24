@@ -6,3 +6,17 @@ coverage
 !.env.local
 dev-server*.log
 output/playwright
+dataset_v2/
+dataset_v2.zip
+ml/raw_videos/*
+!ml/raw_videos/.gitkeep
+ml/datasets/*.jsonl
+ml/datasets/*.json
+ml/datasets/splits/*.jsonl
+ml/models/*.pt
+ml/models/*.pth
+ml/models/*.torchscript
+ml/reports/*.json
+ml/reports/*.csv
+__pycache__/
+*.py[cod]

@@ -1,7 +1,10 @@
-numpy
+numpy<2
 pandas
 scikit-learn
 torch
 tqdm
 matplotlib
+opencv-python<4.12
+opencv-contrib-python<4.12
+mediapipe<0.10.22
 

@@ -9,6 +9,11 @@
     "train:model": "node scripts/train-knn-model.mjs",
     "train:dynamic-model": "node scripts/train-dynamic-model.mjs",
     "dataset:export": "node scripts/export-training-dataset.mjs",
+    "ml:extract-videos": "python ml/scripts/extract_video_landmarks.py",
+    "ml:health": "python ml/scripts/dataset_health_report.py",
+    "ml:split": "python ml/scripts/split_dataset.py",
+    "ml:train-transformer": "python ml/scripts/train_transformer.py",
+    "ml:evaluate": "python ml/scripts/evaluate_model.py",
     "test": "vitest run",
     "test:watch": "vitest"
   },

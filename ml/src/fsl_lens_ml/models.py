@@ -19,12 +19,20 @@ class TransformerClassifier(nn.Module):
     def __init__(self, input_size, class_count, hidden_size=128, heads=4, layers=2):
         super().__init__()
         self.project = nn.Linear(input_size, hidden_size)
+        positions = torch.arange(512).unsqueeze(1)
+        frequencies = torch.exp(torch.arange(0, hidden_size, 2) * (-torch.log(torch.tensor(10000.0)) / hidden_size))
+        encoding = torch.zeros(512, hidden_size)
+        encoding[:, 0::2] = torch.sin(positions * frequencies)
+        encoding[:, 1::2] = torch.cos(positions * frequencies[:encoding[:, 1::2].shape[1]])
+        self.register_buffer("position_encoding", encoding, persistent=False)
         layer = nn.TransformerEncoderLayer(hidden_size, heads, batch_first=True)
         self.encoder = nn.TransformerEncoder(layer, layers)
         self.head = nn.Linear(hidden_size, class_count)
 
     def forward(self, inputs):
-        return self.head(self.encoder(self.project(inputs)).mean(dim=1))
+        projected = self.project(inputs)
+        projected = projected + self.position_encoding[:projected.shape[1]]
+        return self.head(self.encoder(projected).mean(dim=1))
 
 
 def train_epoch(model, loader, optimizer, device="cpu"):

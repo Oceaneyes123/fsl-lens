@@ -10,7 +10,7 @@ def signer_independent_split(samples, train_ratio=0.7, val_ratio=0.15, test_rati
     unknown = []
     for sample in samples:
         signer = sample.get(signer_key)
-        if signer in (None, ""):
+        if signer in (None, "") or str(signer).casefold() == "unknown":
             unknown.append(sample)
         else:
             groups.setdefault(str(signer), []).append(sample)

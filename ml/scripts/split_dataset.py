@@ -20,6 +20,8 @@ def main():
     output.mkdir(parents=True, exist_ok=True)
     for name, rows in zip(("train", "val", "test"), signer_independent_split(load_jsonl(args.input), seed=args.seed)):
         (output / f"{name}.jsonl").write_text("".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8")
+        contributors = {row.get("contributor_id") for row in rows} - {None, "", "unknown"}
+        print(f"{name.title()}: {len(rows)} samples, {len(contributors)} contributors")
 
 
 if __name__ == "__main__":

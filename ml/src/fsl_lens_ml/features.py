@@ -16,10 +16,28 @@ def resample_sequence(sequence, target_length=48):
     return values[indices]
 
 
+def flatten_landmark_frame(frame):
+    """Flatten either a raw landmark frame or an extraction metadata frame."""
+    landmarks = frame.get("landmarks", []) if isinstance(frame, dict) else frame
+    values = []
+
+    def append(value):
+        if isinstance(value, dict):
+            values.extend((value.get("x", 0), value.get("y", 0), value.get("z", 0)))
+        elif isinstance(value, (list, tuple, np.ndarray)):
+            for item in value:
+                append(item)
+        else:
+            values.append(value)
+
+    append(landmarks or [])
+    return np.asarray(values, dtype=np.float32)
+
+
 def prepare_landmarks(sample, target_length=48):
     """Convert static landmarks or dynamic frames to a fixed 2D tensor."""
     raw = sample.get("frames") if sample.get("modality") == "dynamic" else [sample.get("landmarks", [])]
-    frames = [np.asarray(frame, dtype=np.float32).reshape(-1) for frame in (raw or [])]
+    frames = [flatten_landmark_frame(frame) for frame in (raw or [])]
     width = max((len(frame) for frame in frames), default=1)
     padded = [np.pad(frame, (0, width - len(frame))) for frame in frames]
     return resample_sequence(padded, target_length)

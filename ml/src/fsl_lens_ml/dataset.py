@@ -20,9 +20,9 @@ def build_label_map(samples):
 
 
 class LandmarkDataset(Dataset):
-    def __init__(self, samples, label_map, sequence_length=48):
+    def __init__(self, samples, label_map, sequence_length=48, input_size=None):
         self.samples, self.label_map, self.sequence_length = samples, label_map, sequence_length
-        self.input_size = max((prepare_landmarks(sample, sequence_length).shape[1] for sample in samples), default=1)
+        self.input_size = input_size or max((prepare_landmarks(sample, sequence_length).shape[1] for sample in samples), default=1)
 
     def __len__(self):
         return len(self.samples)
