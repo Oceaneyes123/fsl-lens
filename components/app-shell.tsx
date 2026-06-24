@@ -1,11 +1,12 @@
 import Link from "next/link";
-import { BookOpen, Camera, Database, Gauge, Hand, ShieldCheck } from "lucide-react";
+import { BookOpen, Camera, Database, Gauge, Hand, HeartHandshake, ShieldCheck } from "lucide-react";
 
 const navItems = [
   { href: "/recognize", label: "Recognize", icon: Camera },
   { href: "/practice", label: "Practice", icon: Gauge },
   { href: "/learn", label: "Learn", icon: BookOpen },
   { href: "/capture", label: "Capture", icon: Database },
+  { href: "/contribute", label: "Contribute", icon: HeartHandshake },
   { href: "/admin", label: "Admin", icon: ShieldCheck },
 ];
 

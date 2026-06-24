@@ -8,6 +8,7 @@
     "start": "next start",
     "train:model": "node scripts/train-knn-model.mjs",
     "train:dynamic-model": "node scripts/train-dynamic-model.mjs",
+    "dataset:export": "node scripts/export-training-dataset.mjs",
     "test": "vitest run",
     "test:watch": "vitest"
   },
