@@ -1,4 +1,4 @@
-import type { LandmarkSnapshot } from "../../components/camera-tracker";
+import type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
 import { areLandmarksInsideGuideFrame, areLandmarksSteady, type NormalizedLandmark } from "../landmarks";
 import { validateSampleQuality, type SampleQualityResult } from "./sample-quality";
 

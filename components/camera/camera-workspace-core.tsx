@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell } from "@/components/app-shell";
-import { CameraTracker, type LandmarkSnapshot } from "@/components/camera-tracker";
+import { CameraTracker } from "@/components/camera-tracker";
 import { CaptureCameraPanel } from "@/components/capture/capture-camera-panel";
 import { CaptureFeedbackPanel } from "@/components/capture/capture-feedback-panel";
 import { CapturePredictionPanel } from "@/components/capture/capture-prediction-panel";
@@ -10,9 +10,11 @@ import { DynamicRecordingPanel } from "@/components/capture/dynamic-recording-pa
 import { SampleSavePanel } from "@/components/capture/sample-save-panel";
 import { SignLabelSelect } from "@/components/capture/sign-label-select";
 import { WordSignForm } from "@/components/capture/word-sign-form";
-import { createWordSign, formatPredictedSigns, signs } from "@/lib/signs";
+import { formatPredictedSigns, signs } from "@/lib/signs";
 import { buildDynamicSamplePayload } from "@/lib/dataset/dynamic-sample";
+import { buildFeedbackPayload } from "@/lib/dataset/feedback-payload";
 import { buildStaticSamplePayload } from "@/lib/dataset/static-sample";
+import type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
 import { createIdleRecognitionResult, createNoModelResult, type RecognitionResult } from "@/lib/recognition";
 import { useRecognitionModels } from "@/hooks/use-recognition-models";
 import { useSampleCapture } from "@/hooks/use-sample-capture";
@@ -21,6 +23,9 @@ import { useDetectionRouter } from "@/hooks/use-detection-router";
 import { useDynamicRecording } from "@/hooks/use-dynamic-recording";
 import { useGuideQuality } from "@/hooks/use-guide-quality";
 import { useSelectedSignRecognition } from "@/hooks/use-selected-sign-recognition";
+import { useSessionId } from "@/hooks/use-session-id";
+import { useSignSelection } from "@/hooks/use-sign-selection";
+import { useWordSignForm } from "@/hooks/use-word-sign-form";
 import { DetectionModeToggle } from "@/components/recognition/detection-mode-toggle";
 import { PredictionPanel } from "@/components/recognition/prediction-panel";
 import { QualityIndicators } from "@/components/recognition/quality-indicators";
@@ -31,16 +36,26 @@ import { PracticeVerdictPanel } from "@/components/practice/practice-verdict-pan
 export type CameraWorkspaceMode = "recognize" | "capture" | "practice";
 
 export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
-  const [selectedLabel, setSelectedLabel] = useState(signs[0]?.label ?? "");
-  const [customSigns, setCustomSigns] = useState<typeof signs>([]);
-  const [wordInput, setWordInput] = useState("");
-  const [wordMessage, setWordMessage] = useState("");
+  const {
+    selectedLabel,
+    setSelectedLabel,
+    setCustomSigns,
+    availableSigns,
+    practiceSigns,
+    selectedSign,
+    isDynamicSign,
+  } = useSignSelection();
+  const { wordInput, setWordInput, wordMessage, handleAddWordSign } = useWordSignForm({
+    availableSigns,
+    setCustomSigns,
+    setSelectedLabel,
+  });
   const [snapshot, setSnapshot] = useState<LandmarkSnapshot | null>(null);
   const [mirror, setMirror] = useState(true);
   const [overlay, setOverlay] = useState(true);
   const { saveMessage, setSaveMessage, saveStatic, saveDynamic } = useSampleCapture();
   const { feedbackMessage, setFeedbackMessage, submit: submitFeedback } = useFeedback();
-  const [sessionId, setSessionId] = useState("");
+  const sessionId = useSessionId();
   const [lastSampleId, setLastSampleId] = useState<string | null>(null);
   const { model, dynamicModel, modelMessage, dynamicModelMessage } = useRecognitionModels();
   const { detectionMode, setDetectionMode, predictSnapshot, resetRouter } = useDetectionRouter({
@@ -54,14 +69,7 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
   );
   const [practiceCameraOpen, setPracticeCameraOpen] = useState(false);
 
-  const availableSigns = useMemo(() => [...signs, ...customSigns], [customSigns]);
-  const practiceSigns = useMemo(
-    () => availableSigns.filter((sign) => sign.type === "alphabet" || sign.type === "number"),
-    [availableSigns],
-  );
-  const selectedSign = availableSigns.find((sign) => sign.label === selectedLabel) ?? availableSigns[0];
   const isPractice = mode === "practice";
-  const isDynamicSign = selectedSign?.modality === "dynamic";
   const {
     recording: dynamicRecording,
     start: startDynamicRecording,
@@ -87,10 +95,6 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
   });
   const recognition = mode === "recognize" ? routedRecognition : selectedSignRecognition;
   const predictedSign = formatPredictedSigns(recognition.topPredictions);
-
-  useEffect(() => {
-    setSessionId(getOrCreateSessionId());
-  }, []);
 
   useEffect(() => {
     if (mode !== "capture") {
@@ -195,40 +199,15 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
       return;
     }
 
-    const result = await submitFeedback({
-      session_id: sessionId,
-      predicted_sign_id: recognition.predictedLabel,
-      expected_sign_id: isPractice ? selectedSign.label : null,
-      confidence: recognition.confidence,
-      top_predictions_json: recognition.topPredictions,
-      was_correct: wasCorrect,
-      sample_id: lastSampleId,
-    });
+    const result = await submitFeedback(buildFeedbackPayload({
+      sessionId,
+      recognition,
+      isPractice,
+      selectedSignLabel: selectedSign.label,
+      wasCorrect,
+      lastSampleId,
+    }));
 
-  }
-
-  function handleAddWordSign(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-
-    const value = wordInput.trim();
-    if (!value) {
-      setWordMessage("Enter a word before adding it.");
-      return;
-    }
-
-    const nextSign = createWordSign(value);
-    if (nextSign.label === "word_") {
-      setWordMessage("Use at least one letter or number for the word sign.");
-      return;
-    }
-
-    if (!availableSigns.some((sign) => sign.label === nextSign.label)) {
-      setCustomSigns((currentSigns) => [...currentSigns, nextSign]);
-    }
-
-    setSelectedLabel(nextSign.label);
-    setWordInput("");
-    setWordMessage(`${nextSign.displayName} added to the training list.`);
   }
 
   if (mode === "recognize") {
@@ -336,19 +315,6 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
       </div>
     </AppShell>
   );
-}
-
-function getOrCreateSessionId() {
-  const key = "fsl-lens-session-id";
-  const existing = window.sessionStorage.getItem(key);
-
-  if (existing) {
-    return existing;
-  }
-
-  const next = window.crypto.randomUUID();
-  window.sessionStorage.setItem(key, next);
-  return next;
 }
 
 function isEditableEventTarget(target: EventTarget | null) {

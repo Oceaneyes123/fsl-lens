@@ -1,13 +1,9 @@
 import type { HandLandmarker } from "@mediapipe/tasks-vision";
 import { detectionSettings } from "./detection-config";
+import type { LandmarkSnapshot } from "./detection/landmark-snapshot";
 import type { NormalizedLandmark } from "./landmarks";
 
-export type LandmarkSnapshot = {
-  landmarks: NormalizedLandmark[][];
-  handCount: number;
-  handedness: string[];
-  confidence: number;
-};
+export type { LandmarkSnapshot } from "./detection/landmark-snapshot";
 
 const zeroLandmark = (): NormalizedLandmark => ({ x: 0, y: 0, z: 0 });
 

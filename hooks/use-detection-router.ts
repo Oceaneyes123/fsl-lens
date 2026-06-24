@@ -1,8 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LandmarkSnapshot } from "@/components/camera-tracker";
 import { detectionSettings, type DetectionMode } from "@/lib/detection/detection-config";
+import type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
 import { DetectionModeRouter } from "@/lib/detection/detection-mode-router";
 import { createIdleRecognitionResult, createNoModelResult } from "@/lib/detection/prediction-result";
 import type { DynamicSequenceModel, KnnModel } from "@/lib/models/model-types";

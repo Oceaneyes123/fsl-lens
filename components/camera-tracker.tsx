@@ -2,10 +2,11 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
-import { LandmarkExtractor, type LandmarkSnapshot } from "@/lib/landmark-extractor";
+import type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
+import { LandmarkExtractor } from "@/lib/landmark-extractor";
 import type { NormalizedLandmark } from "@/lib/landmarks";
 
-export type { LandmarkSnapshot } from "@/lib/landmark-extractor";
+export type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
 
 type CameraTrackerProps = {
   autoStart?: boolean;

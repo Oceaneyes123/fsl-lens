@@ -1,4 +1,4 @@
-import type { LandmarkSnapshot } from "@/components/camera-tracker";
+import type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
 import type { LandmarkFrame } from "@/lib/dynamic-landmarks";
 import type { Sign } from "@/lib/signs";
 

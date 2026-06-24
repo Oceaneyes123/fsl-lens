@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LandmarkSnapshot } from "@/components/camera-tracker";
+import type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
+import { applyDynamicConfirmation, applyStaticConfirmation } from "@/lib/detection/recognition-transitions";
 import { createDynamicFrameBuffer } from "@/lib/dynamic-capture";
 import type { LandmarkFrame } from "@/lib/dynamic-landmarks";
 import { recognizeDynamicSequence } from "@/lib/dynamic-recognition";
@@ -72,18 +73,7 @@ export function useSelectedSignRecognition({
       }
       const rawRecognition = recognizeDynamicSequence({ model: dynamicModel, frames, handCount: snapshot.handCount });
       const stableState = dynamicTracker.current.update(rawRecognition.state === "confirmed" ? rawRecognition.predictedLabel : null);
-      const confirmed = rawRecognition.state === "confirmed" && stableState.stable;
-      setRecognition({
-        ...rawRecognition,
-        state: confirmed ? "confirmed" : rawRecognition.state === "confirmed" ? "uncertain" : rawRecognition.state,
-        stable: stableState.stable,
-        stableFrameCount: stableState.count,
-        message: confirmed
-          ? "Dynamic prediction confirmed."
-          : rawRecognition.state === "confirmed"
-            ? `Repeat the motion for confirmation (${stableState.count}/${requiredStableFrames}).`
-            : rawRecognition.message,
-      });
+      setRecognition(applyDynamicConfirmation({ rawRecognition, stableState, requiredStableFrames }));
       return;
     }
 
@@ -99,18 +89,7 @@ export function useSelectedSignRecognition({
       handedness: snapshot.handedness,
     });
     const stableState = staticTracker.current.update(rawRecognition.state === "confirmed" ? rawRecognition.predictedLabel : null);
-    const confirmed = rawRecognition.state === "confirmed" && stableState.stable;
-    setRecognition({
-      ...rawRecognition,
-      state: confirmed ? "confirmed" : rawRecognition.state === "confirmed" ? "uncertain" : rawRecognition.state,
-      stable: stableState.stable,
-      stableFrameCount: stableState.count,
-      message: confirmed
-        ? "Prediction confirmed."
-        : rawRecognition.state === "confirmed"
-          ? `Hold steady for confirmation (${stableState.count}/${requiredStableFrames}).`
-          : rawRecognition.message,
-    });
+    setRecognition(applyStaticConfirmation({ rawRecognition, stableState, requiredStableFrames }));
   }, [addDynamicFrame, clearDynamicFrameBuffer, dynamicModel, dynamicModelMessage, isDynamicSign, model, modelMessage, requiredStableFrames, resetRecognition, snapshot]);
 
   return { recognition, resetRecognition, clearDynamicFrameBuffer };

@@ -1,5 +1,6 @@
 import { RefreshCcw, Settings } from "lucide-react";
-import { CameraTracker, type LandmarkSnapshot } from "@/components/camera-tracker";
+import { CameraTracker } from "@/components/camera-tracker";
+import type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
 
 export function CaptureCameraPanel({ mirror, overlay, predictedSign, onMirrorChange, onOverlayChange, onSnapshot }: {
   mirror: boolean;

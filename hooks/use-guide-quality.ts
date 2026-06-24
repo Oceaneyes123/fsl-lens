@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LandmarkSnapshot } from "@/components/camera-tracker";
 import { advanceGuideQuality } from "@/lib/dataset/guide-quality";
 import type { GuideQualityState } from "@/lib/dataset/guide-quality";
+import type { LandmarkSnapshot } from "@/lib/detection/landmark-snapshot";
 import type { SampleQualityResult } from "@/lib/sample-quality";
 import type { Sign } from "@/lib/signs";
 
