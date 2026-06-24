@@ -5,22 +5,27 @@ import { Check, HandMetal, Plus, RefreshCcw, Save, Settings, X } from "lucide-re
 import { AppShell } from "@/components/app-shell";
 import { CameraTracker, type LandmarkSnapshot } from "@/components/camera-tracker";
 import { createWordSign, formatPredictedSigns, signs } from "@/lib/signs";
-import { createDynamicFrameBuffer, summarizeDynamicRecording, type RecordedDynamicFrame } from "@/lib/dynamic-capture";
+import { createDynamicFrameBuffer } from "@/lib/dynamic-capture";
 import { recognizeDynamicSequence } from "@/lib/dynamic-recognition";
-import { detectionSettings, type DetectionMode } from "@/lib/detection-config";
 import { createPredictionTracker } from "@/lib/prediction";
-import { validateSampleQuality } from "@/lib/sample-quality";
-import { areLandmarksInsideGuideFrame, areLandmarksSteady, type NormalizedLandmark } from "@/lib/landmarks";
 import {
   createIdleRecognitionResult,
   createNoModelResult,
   recognizeLandmarks,
   type RecognitionResult,
 } from "@/lib/recognition";
-import { DetectionModeRouter } from "@/lib/recognize-mode-recognition";
 import { useRecognitionModels } from "@/hooks/use-recognition-models";
 import { useSampleCapture } from "@/hooks/use-sample-capture";
 import { useFeedback } from "@/hooks/use-feedback";
+import { useDetectionRouter } from "@/hooks/use-detection-router";
+import { useDynamicRecording } from "@/hooks/use-dynamic-recording";
+import { useGuideQuality } from "@/hooks/use-guide-quality";
+import { DetectionModeToggle } from "@/components/recognition/detection-mode-toggle";
+import { PredictionPanel } from "@/components/recognition/prediction-panel";
+import { QualityIndicators } from "@/components/recognition/quality-indicators";
+import { TopPredictions } from "@/components/recognition/top-predictions";
+import { PracticeSignGrid } from "@/components/practice/practice-sign-grid";
+import { PracticeVerdictPanel } from "@/components/practice/practice-verdict-panel";
 
 export type CameraWorkspaceMode = "recognize" | "capture" | "practice";
 
@@ -37,20 +42,18 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
   const [sessionId, setSessionId] = useState("");
   const [lastSampleId, setLastSampleId] = useState<string | null>(null);
   const { model, dynamicModel, modelMessage, dynamicModelMessage } = useRecognitionModels();
-  const [detectionMode, setDetectionMode] = useState<DetectionMode>(detectionSettings.defaultMode);
+  const { detectionMode, setDetectionMode, predictSnapshot, resetRouter } = useDetectionRouter({
+    model,
+    dynamicModel,
+    modelMessage,
+  });
   const [recognition, setRecognition] = useState<RecognitionResult>(() =>
     createNoModelResult("Loading recognition model..."),
   );
-  const [insideGuideFrame, setInsideGuideFrame] = useState(false);
-  const [steady, setSteady] = useState(false);
   const [practiceCameraOpen, setPracticeCameraOpen] = useState(false);
-  const [isRecordingDynamicSample, setIsRecordingDynamicSample] = useState(false);
-  const [dynamicRecording, setDynamicRecording] = useState<RecordedDynamicFrame[]>([]);
   const trackerRef = useRef(createPredictionTracker({ requiredFrames: 5 }));
   const dynamicTrackerRef = useRef(createPredictionTracker({ requiredFrames: 2 }));
-  const historyRef = useRef<NormalizedLandmark[][][]>([]);
   const dynamicFrameBufferRef = useRef(createDynamicFrameBuffer({ maxFrames: 45 }));
-  const recognitionRouterRef = useRef(new DetectionModeRouter());
 
   const availableSigns = useMemo(() => [...signs, ...customSigns], [customSigns]);
   const practiceSigns = useMemo(
@@ -60,22 +63,19 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
   const selectedSign = availableSigns.find((sign) => sign.label === selectedLabel) ?? availableSigns[0];
   const isPractice = mode === "practice";
   const isDynamicSign = selectedSign?.modality === "dynamic";
+  const {
+    recording: dynamicRecording,
+    start: startDynamicRecording,
+    stop: stopDynamicRecording,
+    reset: resetDynamicRecording,
+    addFrame: addDynamicFrame,
+    summarize: summarizeDynamicRecording,
+  } = useDynamicRecording();
+  const { insideGuideFrame, steady, quality } = useGuideQuality({ snapshot, selectedSign, isDynamicSign });
   const requiredStableFrames = isDynamicSign
     ? (dynamicModel?.thresholdConfig.requiredStableSequences ?? 2)
     : (model?.thresholdConfig.requiredStableFrames ?? 5);
   const predictedSign = formatPredictedSigns(recognition.topPredictions);
-
-  const quality = snapshot
-    ? validateSampleQuality({
-        detectedHandCount: snapshot.handCount,
-        expectedHandCount: selectedSign.expectedHandCount,
-        detectorConfidence: snapshot.confidence,
-        landmarksVisible: snapshot.landmarks.length > 0,
-        insideGuideFrame,
-        steady,
-        requireSteady: !isDynamicSign,
-      })
-    : null;
 
   useEffect(() => {
     setSessionId(getOrCreateSessionId());
@@ -113,16 +113,6 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
   }, [availableSigns, mode, handleSaveSample]);
 
   useEffect(() => {
-    if (model) recognitionRouterRef.current.loadStaticModel(model);
-    else setRecognition(createNoModelResult(modelMessage));
-  }, [model, modelMessage]);
-
-  useEffect(() => {
-    if (dynamicModel) recognitionRouterRef.current.loadDynamicModel(dynamicModel);
-  }, [dynamicModel]);
-
-  useEffect(() => {
-    recognitionRouterRef.current.setMode(detectionMode);
     setRecognition(createIdleRecognitionResult(
       detectionMode === "static" ? "Place your hand inside the camera frame." : "Move through the full sign inside the guide frame.",
     ));
@@ -132,42 +122,28 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
     trackerRef.current.update(null);
     dynamicTrackerRef.current.update(null);
     dynamicFrameBufferRef.current.clear();
-    setDynamicRecording([]);
-    setIsRecordingDynamicSample(false);
-  }, [selectedLabel]);
+    resetDynamicRecording();
+  }, [resetDynamicRecording, selectedLabel]);
 
   useEffect(() => {
     if (!snapshot) {
-      recognitionRouterRef.current.predict(null);
-      historyRef.current = [];
+      resetRouter();
       trackerRef.current.update(null);
       dynamicTrackerRef.current.update(null);
       dynamicFrameBufferRef.current.clear();
-      setInsideGuideFrame(false);
-      setSteady(false);
       setRecognition(model ? createIdleRecognitionResult() : createNoModelResult(modelMessage));
       return;
     }
 
-    historyRef.current = [...historyRef.current.slice(-4), snapshot.landmarks];
-    const nextInsideGuideFrame = areLandmarksInsideGuideFrame(snapshot.landmarks);
-    const nextSteady = areLandmarksSteady(historyRef.current);
-    setInsideGuideFrame(nextInsideGuideFrame);
-    setSteady(nextSteady);
-
     if (mode === "recognize") {
-      setRecognition(recognitionRouterRef.current.predict(snapshot));
+      setRecognition(predictSnapshot(snapshot));
       return;
     }
 
     if (isDynamicSign) {
       dynamicFrameBufferRef.current.add(snapshot.landmarks);
 
-      if (isRecordingDynamicSample) {
-        setDynamicRecording((frames) =>
-          [...frames, { frame: snapshot.landmarks, confidence: snapshot.confidence }].slice(-90),
-        );
-      }
+      addDynamicFrame(snapshot.landmarks, snapshot.confidence);
 
       if (!dynamicModel) {
         dynamicTrackerRef.current.update(null);
@@ -232,7 +208,7 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
           ? `Hold steady for confirmation (${stableState.count}/${requiredStableFrames}).`
           : rawRecognition.message,
     });
-  }, [dynamicModel, dynamicModelMessage, isDynamicSign, isRecordingDynamicSample, model, modelMessage, requiredStableFrames, snapshot]);
+  }, [addDynamicFrame, dynamicModel, dynamicModelMessage, isDynamicSign, model, modelMessage, mode, predictSnapshot, requiredStableFrames, resetRouter, snapshot]);
 
   async function handleSaveSample() {
     if (isDynamicSign) {
@@ -272,7 +248,7 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
       return;
     }
 
-    const recording = summarizeDynamicRecording(dynamicRecording);
+    const recording = summarizeDynamicRecording();
     const result = await saveDynamic({
       sign_id: selectedSign.id,
       session_id: window.crypto.randomUUID(),
@@ -293,8 +269,7 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
 
     if (result.ok) {
       setLastSampleId(null);
-      setDynamicRecording([]);
-      setIsRecordingDynamicSample(false);
+      resetDynamicRecording();
     }
 
   }
@@ -344,142 +319,16 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
   if (mode === "recognize") {
     return (
       <AppShell>
-        <div className="mb-4 flex justify-center" role="group" aria-label="Detection mode">
-          {(["static", "dynamic"] as const).map((option) => (
-            <button
-              key={option}
-              type="button"
-              onClick={() => setDetectionMode(option)}
-              aria-pressed={detectionMode === option}
-              className={`h-10 px-5 text-sm font-semibold first:rounded-l-md last:rounded-r-md ${
-                detectionMode === option ? "bg-teal text-white" : "border border-line bg-white text-ink"
-              }`}
-            >
-              {option === "static" ? "Static signs" : "Dynamic signs"}
-            </button>
-          ))}
-        </div>
+        <DetectionModeToggle mode={detectionMode} onChange={setDetectionMode} />
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_430px]">
           <section className="rounded-lg border border-line bg-white p-4 shadow-soft">
             <CameraTracker autoStart mirror={mirror} overlay={overlay} onSnapshot={setSnapshot} />
           </section>
 
           <section className="flex min-h-[360px] flex-col rounded-lg border border-line bg-white p-6 shadow-soft">
-            {/* Prediction state indicator */}
-            <div className="flex items-center justify-between">
-              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{predictedSign.type}</p>
-              <span
-                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
-                  recognition.state === "confirmed"
-                    ? "bg-emerald-50 text-emerald-700"
-                    : recognition.state === "uncertain"
-                      ? "bg-amber-50 text-amber-700"
-                      : "bg-slate-50 text-slate-500"
-                }`}
-              >
-                <span
-                  className={`inline-block h-1.5 w-1.5 rounded-full ${
-                    recognition.state === "confirmed"
-                      ? "bg-emerald-500"
-                      : recognition.state === "uncertain"
-                        ? "bg-amber-500"
-                        : "bg-slate-400"
-                  }`}
-                />
-                {recognition.state === "confirmed"
-                  ? "Confirmed"
-                  : recognition.state === "uncertain"
-                    ? "Uncertain"
-                    : "Waiting"}
-              </span>
-            </div>
-
-            {/* Main predicted sign */}
-            <div className="mt-4 flex flex-1 flex-col items-center justify-center">
-              <p
-                data-testid="predicted-sign-value"
-                className={`font-bold leading-none ${
-                  predictedSign.value === "Unknown" ? "text-5xl sm:text-6xl text-slate-400" : "text-7xl sm:text-8xl text-ink"
-                }`}
-              >
-                {predictedSign.value}
-              </p>
-
-              {/* Confidence bar for top prediction */}
-              {recognition.topPredictions.length > 0 && (
-                <div className="mt-4 w-full max-w-[200px]">
-                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
-                    <div
-                      className={`h-full rounded-full transition-all duration-200 ${
-                        recognition.state === "confirmed"
-                          ? "bg-emerald-500"
-                          : recognition.state === "uncertain"
-                            ? "bg-amber-500"
-                            : "bg-slate-300"
-                      }`}
-                      style={{ width: `${Math.round(recognition.confidence * 100)}%` }}
-                    />
-                  </div>
-                  <p className="mt-1 text-center text-xs text-slate-500">
-                    {Math.round(recognition.confidence * 100)}% confidence
-                  </p>
-                </div>
-              )}
-
-              {/* Stable frame progress for recognition */}
-              {recognition.stableFrameCount > 0 && recognition.state !== "confirmed" && (
-                <p className="mt-2 text-xs text-slate-400">
-                  Hold stable ({recognition.stableFrameCount}/{requiredStableFrames})
-                </p>
-              )}
-            </div>
-
-            {/* Quality indicators */}
-            <div className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
-              <div className="flex flex-col items-center gap-1">
-                <span className={insideGuideFrame ? "text-emerald-500" : "text-slate-400"}>
-                  {insideGuideFrame ? "✓" : "○"}
-                </span>
-                <span className="text-[10px] font-medium text-slate-500">Guide</span>
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                <span className={steady ? "text-emerald-500" : "text-slate-400"}>
-                  {steady ? "✓" : "○"}
-                </span>
-                <span className="text-[10px] font-medium text-slate-500">Steady</span>
-              </div>
-              <div className="flex flex-col items-center gap-1">
-                <span className={snapshot ? "text-emerald-500" : "text-slate-400"}>
-                  {snapshot ? "✓" : "○"}
-                </span>
-                <span className="text-[10px] font-medium text-slate-500">Hand</span>
-              </div>
-            </div>
-
-            {/* Top-3 predictions mini chart */}
-            {recognition.topPredictions.length > 1 && (
-              <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
-                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Top candidates</p>
-                {recognition.topPredictions.slice(0, 3).map((prediction, index) => (
-                  <div key={prediction.label} className="flex items-center gap-2">
-                    <span className="w-6 text-right text-[11px] font-medium text-slate-600">
-                      {index === 0 ? "1st" : index === 1 ? "2nd" : "3rd"}
-                    </span>
-                    <div className="flex flex-1 items-center gap-2">
-                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
-                        <div
-                          className="h-full rounded-full bg-teal/60 transition-all duration-200"
-                          style={{ width: `${Math.round(prediction.confidence * 100)}%` }}
-                        />
-                      </div>
-                      <span className="w-8 text-right text-[11px] font-medium text-slate-500">
-                        {Math.round(prediction.confidence * 100)}%
-                      </span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+            <PredictionPanel predictedSign={predictedSign} recognition={recognition} requiredStableFrames={requiredStableFrames} />
+            <QualityIndicators insideGuideFrame={insideGuideFrame} steady={steady} handDetected={Boolean(snapshot)} />
+            <TopPredictions predictions={recognition.topPredictions} />
           </section>
         </div>
       </AppShell>
@@ -497,49 +346,26 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
     return (
       <AppShell>
         <div className="space-y-5">
-          <section className="rounded-lg border border-line bg-white p-5 shadow-soft">
-            <h1 className="text-xl font-semibold text-ink">Practice Sign</h1>
-            <div className="mt-4 grid grid-cols-6 gap-2 sm:grid-cols-9 lg:grid-cols-12">
-              {practiceSigns.map((sign) => (
-                <button
-                  key={sign.label}
-                  type="button"
-                  onClick={() => {
-                    setSelectedLabel(sign.label);
-                    setPracticeCameraOpen(true);
-                  }}
-                  className={`flex aspect-square items-center justify-center rounded-md border text-2xl font-bold ${
-                    sign.label === selectedSign.label && practiceCameraOpen
-                      ? "border-teal bg-teal text-white"
-                      : "border-line bg-white text-ink"
-                  }`}
-                  aria-pressed={sign.label === selectedSign.label && practiceCameraOpen}
-                >
-                  {sign.displayName}
-                </button>
-              ))}
-            </div>
-          </section>
+          <PracticeSignGrid
+            signs={practiceSigns}
+            selectedLabel={selectedSign.label}
+            active={practiceCameraOpen}
+            onSelect={(label) => {
+              setSelectedLabel(label);
+              setPracticeCameraOpen(true);
+            }}
+          />
 
           {practiceCameraOpen ? (
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
               <section className="rounded-lg border border-line bg-white p-4 shadow-soft">
                 <CameraTracker autoStart mirror={mirror} overlay={overlay} onSnapshot={setSnapshot} />
               </section>
-              <section className="flex min-h-[300px] flex-col items-center justify-center rounded-lg border border-line bg-white p-6 text-center shadow-soft">
-                <p className="text-7xl font-bold leading-none text-ink sm:text-8xl">{selectedSign.displayName}</p>
-                <div className="mt-6 flex h-36 w-36 items-center justify-center">
-                  {practiceHasVerdict ? (
-                    practiceIsCorrect ? (
-                      <Check className="h-32 w-32 text-teal" strokeWidth={3} aria-label="Correct" />
-                    ) : (
-                      <X className="h-32 w-32 text-coral" strokeWidth={3} aria-label="Incorrect" />
-                    )
-                  ) : (
-                    <div className="h-24 w-24 rounded-full border-4 border-dashed border-slate-300" aria-label="Waiting" />
-                  )}
-                </div>
-              </section>
+              <PracticeVerdictPanel
+                displayName={selectedSign.displayName}
+                hasVerdict={practiceHasVerdict}
+                isCorrect={practiceIsCorrect}
+              />
             </div>
           ) : null}
         </div>
@@ -718,8 +544,7 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
                   <button
                     type="button"
                     onClick={() => {
-                      setDynamicRecording([]);
-                      setIsRecordingDynamicSample(true);
+                      startDynamicRecording();
                       setSaveMessage("Recording dynamic sign...");
                     }}
                     className="h-10 rounded-md border border-line text-sm font-semibold text-teal"
@@ -729,7 +554,7 @@ export function CameraWorkspaceCore({ mode }: { mode: CameraWorkspaceMode }) {
                   <button
                     type="button"
                     onClick={() => {
-                      setIsRecordingDynamicSample(false);
+                      stopDynamicRecording();
                       setSaveMessage(`Recording stopped with ${dynamicRecording.length} frame(s).`);
                     }}
                     className="h-10 rounded-md border border-line text-sm font-semibold text-coral"

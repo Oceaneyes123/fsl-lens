@@ -5,6 +5,16 @@ export type RecordedDynamicFrame = {
   confidence: number;
 };
 
+export function appendDynamicFrame(
+  recording: RecordedDynamicFrame[],
+  active: boolean,
+  frame: LandmarkFrame,
+  confidence: number,
+  maxFrames: number,
+) {
+  return active ? [...recording, { frame, confidence }].slice(-maxFrames) : recording;
+}
+
 export class SequenceBuffer {
   private values: number[][] = [];
 
