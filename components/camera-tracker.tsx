@@ -24,8 +24,15 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
   const startRequestRef = useRef(0);
   const extractorRef = useRef<LandmarkExtractor | null>(null);
   const [status, setStatus] = useState("Camera is off.");
+  const statusRef = useRef(status);
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
+
+  function updateStatus(nextStatus: string) {
+    if (statusRef.current === nextStatus) return;
+    statusRef.current = nextStatus;
+    setStatus(nextStatus);
+  }
 
   useEffect(() => {
     if (autoStart) {
@@ -44,7 +51,7 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
     startRequestRef.current = requestId;
     startingRef.current = true;
     setLoading(true);
-    setStatus("Loading hand landmark model...");
+    updateStatus("Loading hand landmark model...");
 
     try {
       const extractor = new LandmarkExtractor();
@@ -101,10 +108,10 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
         }
 
         if (!snapshot) {
-          setStatus("Place your hand inside the camera frame.");
+          updateStatus("Place your hand inside the camera frame.");
           onSnapshot(null);
         } else {
-          setStatus(`${snapshot.handCount} hand(s) detected.`);
+          updateStatus(`${snapshot.handCount} hand(s) detected.`);
           onSnapshot(snapshot);
         }
 
@@ -122,7 +129,7 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
       extractorRef.current = null;
       setLoading(false);
       setRunning(false);
-      setStatus(error instanceof Error ? error.message : "Unable to start camera.");
+      updateStatus(error instanceof Error ? error.message : "Unable to start camera.");
     }
   }
 

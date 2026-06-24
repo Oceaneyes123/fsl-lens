@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { CameraTracker } from "@/components/camera-tracker";
 import { useDynamicRecording } from "@/hooks/use-dynamic-recording";
@@ -17,22 +17,35 @@ import { ContributorConsentCard } from "./contributor-consent-card";
 import { ContributorMetadataForm } from "./contributor-metadata-form";
 import { ContributorSignList } from "./contributor-sign-list";
 
+const snapshotIntervalMs = 1000 / 15;
+
 export function ContributorCaptureWorkspace() {
   const [consent, setConsent] = useState(false);
   const [selectedLabel, setSelectedLabel] = useState(signs[0].label);
   const [metadata, setMetadata] = useState<ContributorMetadata>(defaultContributorMetadata);
   const [snapshot, setSnapshot] = useState<LandmarkSnapshot | null>(null);
   const [attempts, setAttempts] = useState(0);
+  const lastSnapshotAt = useRef(0);
   const selectedSign = signs.find((sign) => sign.label === selectedLabel) ?? signs[0];
   const dynamic = selectedSign.modality === "dynamic";
   const recorder = useDynamicRecording();
+  const { addFrame } = recorder;
   const quality = useGuideQuality({ snapshot, selectedSign, isDynamicSign: dynamic });
   const capture = useSampleCapture();
 
-  function handleSnapshot(next: LandmarkSnapshot | null) {
+  const handleSnapshot = useCallback((next: LandmarkSnapshot | null) => {
+    if (!next) {
+      if (lastSnapshotAt.current === 0) return;
+      lastSnapshotAt.current = 0;
+      setSnapshot(null);
+      return;
+    }
+    const now = performance.now();
+    if (now - lastSnapshotAt.current < snapshotIntervalMs) return;
+    lastSnapshotAt.current = now;
     setSnapshot(next);
-    if (next) recorder.addFrame(next.landmarks, next.confidence);
-  }
+    addFrame(next.landmarks, next.confidence);
+  }, [addFrame]);
 
   async function submit() {
     if (!snapshot || !consent) return;
