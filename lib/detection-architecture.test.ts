@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
 import { normalizeDetectedHands } from "./landmark-extractor";
 import { normalizeDynamicSequence, normalizeDynamicSequenceFrames, type LandmarkFrame } from "./dynamic-landmarks";
 import { DynamicSequenceRecorder, SequenceBuffer } from "./dynamic-capture";
@@ -156,6 +157,12 @@ describe("DynamicSequenceRecorder", () => {
 });
 
 describe("DetectionModeRouter", () => {
+  it("keeps recognize router lifecycle outside CameraWorkspaceCore", () => {
+    const core = readFileSync(new URL("../components/camera/camera-workspace-core.tsx", import.meta.url), "utf8");
+
+    expect(core).toContain("useDetectionRouter");
+    expect(core).not.toContain("new DetectionModeRouter");
+  });
   it("keeps new and compatibility entry points aligned", () => {
     expect(ExtractedDetectionModeRouter).toBe(DetectionModeRouter);
     expect(extractedDetectionSettings.defaultMode).toBe("static");
