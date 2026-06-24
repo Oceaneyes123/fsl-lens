@@ -1,0 +1,1 @@
+export type StaticSample = { sign_id: string; session_id: string; landmarks_json: unknown; hand_count: number; handedness: string[]; detector_confidence: number; camera_type: string; lighting_note: string; quality_status: string; review_status: string; consent_raw_image: boolean; raw_image_url: string | null };

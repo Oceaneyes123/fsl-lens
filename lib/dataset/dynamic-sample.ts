@@ -1,0 +1,1 @@
+export type DynamicSample = { sign_id: string; session_id: string; frames_json: unknown; frame_count: number; fps: number; hand_count: number; handedness: string[]; detector_confidence: number; camera_type: string; lighting_note: string; quality_status: string; review_status: string; signer_id: string | null; consent_raw_image: boolean; raw_image_url: string | null };
