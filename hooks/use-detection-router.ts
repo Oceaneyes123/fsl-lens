@@ -7,10 +7,11 @@ import { DetectionModeRouter } from "@/lib/detection/detection-mode-router";
 import { createIdleRecognitionResult, createNoModelResult } from "@/lib/detection/prediction-result";
 import type { DynamicSequenceModel, KnnModel } from "@/lib/models/model-types";
 
-export function useDetectionRouter({ model, dynamicModel, modelMessage }: {
+export function useDetectionRouter({ model, dynamicModel, modelMessage, dynamicModelMessage }: {
   model: KnnModel | null;
   dynamicModel: DynamicSequenceModel | null;
   modelMessage: string;
+  dynamicModelMessage: string;
 }) {
   const router = useRef(new DetectionModeRouter());
   const [detectionMode, setMode] = useState<DetectionMode>(detectionSettings.defaultMode);
@@ -28,10 +29,12 @@ export function useDetectionRouter({ model, dynamicModel, modelMessage }: {
     setMode(mode);
   }, []);
   const predictSnapshot = useCallback((snapshot: LandmarkSnapshot | null) => {
-    if (snapshot) return router.current.predict(snapshot);
+    const activeModel = detectionMode === "static" ? model : dynamicModel;
+    const activeModelMessage = detectionMode === "static" ? modelMessage : dynamicModelMessage;
+    if (snapshot) return activeModel ? router.current.predict(snapshot) : createNoModelResult(activeModelMessage);
     router.current.predict(null);
-    return model ? createIdleRecognitionResult() : createNoModelResult(modelMessage);
-  }, [model, modelMessage]);
+    return activeModel ? createIdleRecognitionResult() : createNoModelResult(activeModelMessage);
+  }, [detectionMode, dynamicModel, dynamicModelMessage, model, modelMessage]);
   const resetRouter = useCallback(() => router.current.reset(), []);
 
   return { detectionMode, setDetectionMode, predictSnapshot, resetRouter };

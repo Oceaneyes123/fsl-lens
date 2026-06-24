@@ -163,6 +163,20 @@ describe("DetectionModeRouter", () => {
     expect(core).toContain("useDetectionRouter");
     expect(core).not.toContain("new DetectionModeRouter");
   });
+  it("keeps selected-sign recognition dependencies outside CameraWorkspaceCore", () => {
+    const core = readFileSync(new URL("../components/camera/camera-workspace-core.tsx", import.meta.url), "utf8");
+
+    expect(core).toContain("useSelectedSignRecognition");
+    expect(core).not.toContain("recognizeLandmarks");
+    expect(core).not.toContain("recognizeDynamicSequence");
+    expect(core).not.toContain("createDynamicFrameBuffer");
+  });
+  it("passes separate static and dynamic model messages to the detection router", () => {
+    const hook = readFileSync(new URL("../hooks/use-detection-router.ts", import.meta.url), "utf8");
+
+    expect(hook).toContain("dynamicModelMessage");
+    expect(hook).toContain("detectionMode === \"static\" ? modelMessage : dynamicModelMessage");
+  });
   it("keeps new and compatibility entry points aligned", () => {
     expect(ExtractedDetectionModeRouter).toBe(DetectionModeRouter);
     expect(extractedDetectionSettings.defaultMode).toBe("static");

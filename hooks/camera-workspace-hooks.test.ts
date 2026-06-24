@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as dynamicCapture from "../lib/dynamic-capture";
+import { advanceGuideQuality } from "../lib/dataset/guide-quality";
 
 describe("dynamic recording state", () => {
   it("appends only while active and retains the latest frames", () => {
@@ -23,22 +24,12 @@ describe("dynamic recording state", () => {
 });
 
 describe("guide quality state", () => {
-  it("retains five snapshots and preserves dynamic quality rules", async () => {
-    const guideQuality = await import("./use-guide-quality").catch(() => ({}));
-    const advance = (guideQuality as {
-      advanceGuideQuality?: (...args: never[]) => {
-        history: unknown[];
-        insideGuideFrame: boolean;
-        steady: boolean;
-        quality: { status: string; reasons: string[] };
-      };
-    }).advanceGuideQuality;
+  it("retains five snapshots and preserves dynamic quality rules", () => {
     const landmarks = [[{ x: 0.5, y: 0.5, z: 0 }]];
     let history: typeof landmarks[] = [];
 
-    expect(typeof advance).toBe("function");
     for (let index = 0; index < 6; index += 1) {
-      const state = advance!(history, {
+      const state = advanceGuideQuality(history, {
         landmarks,
         handCount: 1,
         confidence: 1,
@@ -46,7 +37,7 @@ describe("guide quality state", () => {
       history = state.history as typeof history;
     }
 
-    const state = advance!(history, {
+    const state = advanceGuideQuality(history, {
       landmarks,
       handCount: 1,
       confidence: 1,

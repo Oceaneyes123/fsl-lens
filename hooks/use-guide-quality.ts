@@ -1,49 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { LandmarkSnapshot } from "../components/camera-tracker";
-import { areLandmarksInsideGuideFrame, areLandmarksSteady, type NormalizedLandmark } from "../lib/landmarks";
-import { validateSampleQuality, type SampleQualityResult } from "../lib/sample-quality";
-import type { Sign } from "../lib/signs";
+import type { LandmarkSnapshot } from "@/components/camera-tracker";
+import { advanceGuideQuality } from "@/lib/dataset/guide-quality";
+import type { GuideQualityState } from "@/lib/dataset/guide-quality";
+import type { SampleQualityResult } from "@/lib/sample-quality";
+import type { Sign } from "@/lib/signs";
 
-type GuideQualityState = {
-  history: NormalizedLandmark[][][];
-  insideGuideFrame: boolean;
-  steady: boolean;
-  quality: SampleQualityResult;
-};
-
-export function advanceGuideQuality(
-  history: NormalizedLandmark[][][],
-  snapshot: Pick<LandmarkSnapshot, "landmarks" | "handCount" | "confidence">,
-  expectedHandCount: number,
-  isDynamicSign: boolean,
-): GuideQualityState {
-  const nextHistory = [...history.slice(-4), snapshot.landmarks];
-  const insideGuideFrame = areLandmarksInsideGuideFrame(snapshot.landmarks);
-  const steady = areLandmarksSteady(nextHistory);
-  return {
-    history: nextHistory,
-    insideGuideFrame,
-    steady,
-    quality: validateSampleQuality({
-      detectedHandCount: snapshot.handCount,
-      expectedHandCount,
-      detectorConfidence: snapshot.confidence,
-      landmarksVisible: snapshot.landmarks.length > 0,
-      insideGuideFrame,
-      steady,
-      requireSteady: !isDynamicSign,
-    }),
-  };
-}
+export { advanceGuideQuality } from "@/lib/dataset/guide-quality";
 
 export function useGuideQuality({ snapshot, selectedSign, isDynamicSign }: {
   snapshot: LandmarkSnapshot | null;
   selectedSign: Sign;
   isDynamicSign: boolean;
 }) {
-  const history = useRef<NormalizedLandmark[][][]>([]);
+  const history = useRef<ReturnType<typeof advanceGuideQuality>["history"]>([]);
   const [state, setState] = useState<Omit<GuideQualityState, "history" | "quality"> & { quality: SampleQualityResult | null }>({
     insideGuideFrame: false,
     steady: false,
