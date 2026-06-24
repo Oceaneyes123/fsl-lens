@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { normalizeDynamicSequence } from "./dynamic-landmarks";
-import { normalizeLandmarks } from "./landmarks";
+import { featureVersion, normalizeLandmarks } from "./landmarks";
 import { recognizeVisibleSign } from "./recognize-mode-recognition";
 import type { DynamicSequenceModel } from "./dynamic-recognition";
 import type { NormalizedLandmark } from "./landmarks";
@@ -17,6 +17,7 @@ const frames = (first: number, second: number) => [[hand(first)], [hand(second)]
 
 const staticModel: KnnModel = {
   versionName: "test-static",
+  featureVersion,
   thresholdConfig: {
     confirmThreshold: 0.8,
     uncertainThreshold: 0.6,
@@ -34,6 +35,7 @@ const staticModel: KnnModel = {
 
 const dynamicModel: DynamicSequenceModel = {
   versionName: "test-dynamic",
+  featureVersion,
   thresholdConfig: {
     confirmThreshold: 0.8,
     uncertainThreshold: 0.6,

@@ -7,6 +7,7 @@ import { CameraTracker, type LandmarkSnapshot } from "@/components/camera-tracke
 import { createWordSign, formatPredictedSigns, signs } from "@/lib/signs";
 import { createDynamicFrameBuffer, summarizeDynamicRecording, type RecordedDynamicFrame } from "@/lib/dynamic-capture";
 import { recognizeDynamicSequence, type DynamicSequenceModel } from "@/lib/dynamic-recognition";
+import { detectionSettings, type DetectionMode } from "@/lib/detection-config";
 import { createPredictionTracker } from "@/lib/prediction";
 import { validateSampleQuality } from "@/lib/sample-quality";
 import { loadDynamicRecognitionModel, loadRecognitionModel, saveDynamicLandmarkSample, saveFeedback, saveLandmarkSample } from "@/lib/supabase";
@@ -18,7 +19,7 @@ import {
   type KnnModel,
   type RecognitionResult,
 } from "@/lib/recognition";
-import { recognizeVisibleSign } from "@/lib/recognize-mode-recognition";
+import { DetectionModeRouter } from "@/lib/recognize-mode-recognition";
 
 type CameraWorkspaceProps = {
   mode: "recognize" | "capture" | "practice";
@@ -40,6 +41,7 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   const [dynamicModel, setDynamicModel] = useState<DynamicSequenceModel | null>(null);
   const [modelMessage, setModelMessage] = useState("Loading recognition model...");
   const [dynamicModelMessage, setDynamicModelMessage] = useState("Loading dynamic recognition model...");
+  const [detectionMode, setDetectionMode] = useState<DetectionMode>(detectionSettings.defaultMode);
   const [recognition, setRecognition] = useState<RecognitionResult>(() =>
     createNoModelResult("Loading recognition model..."),
   );
@@ -52,6 +54,7 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   const dynamicTrackerRef = useRef(createPredictionTracker({ requiredFrames: 2 }));
   const historyRef = useRef<NormalizedLandmark[][][]>([]);
   const dynamicFrameBufferRef = useRef(createDynamicFrameBuffer({ maxFrames: 45 }));
+  const recognitionRouterRef = useRef(new DetectionModeRouter());
 
   const availableSigns = useMemo(() => [...signs, ...customSigns], [customSigns]);
   const practiceSigns = useMemo(
@@ -123,6 +126,7 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
 
       setModel(result.model);
       setModelMessage(result.message);
+      if (result.model) recognitionRouterRef.current.loadStaticModel(result.model);
       if (!result.model) {
         setRecognition(createNoModelResult(result.message));
       }
@@ -143,12 +147,20 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
 
       setDynamicModel(result.model);
       setDynamicModelMessage(result.message);
+      if (result.model) recognitionRouterRef.current.loadDynamicModel(result.model);
     });
 
     return () => {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    recognitionRouterRef.current.setMode(detectionMode);
+    setRecognition(createIdleRecognitionResult(
+      detectionMode === "static" ? "Place your hand inside the camera frame." : "Move through the full sign inside the guide frame.",
+    ));
+  }, [detectionMode]);
 
   useEffect(() => {
     trackerRef.current.update(null);
@@ -160,6 +172,7 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
 
   useEffect(() => {
     if (!snapshot) {
+      recognitionRouterRef.current.predict(null);
       historyRef.current = [];
       trackerRef.current.update(null);
       dynamicTrackerRef.current.update(null);
@@ -177,30 +190,7 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
     setSteady(nextSteady);
 
     if (mode === "recognize") {
-      dynamicFrameBufferRef.current.add(snapshot.landmarks);
-      const rawRecognition = recognizeVisibleSign({
-        model,
-        dynamicModel,
-        landmarks: snapshot.landmarks,
-        dynamicFrames: dynamicFrameBufferRef.current.frames(),
-        handCount: snapshot.handCount,
-        handedness: snapshot.handedness,
-      });
-      const stableCandidate = rawRecognition.state === "confirmed" ? rawRecognition.predictedLabel : null;
-      const stableState = trackerRef.current.update(stableCandidate);
-      const confirmed = rawRecognition.state === "confirmed" && stableState.stable;
-
-      setRecognition({
-        ...rawRecognition,
-        state: confirmed ? "confirmed" : rawRecognition.state === "confirmed" ? "uncertain" : rawRecognition.state,
-        stable: stableState.stable,
-        stableFrameCount: stableState.count,
-        message: confirmed
-          ? rawRecognition.message
-          : rawRecognition.state === "confirmed"
-            ? `Hold or repeat for confirmation (${stableState.count}/${requiredStableFrames}).`
-            : rawRecognition.message,
-      });
+      setRecognition(recognitionRouterRef.current.predict(snapshot));
       return;
     }
 
@@ -391,21 +381,142 @@ export function CameraWorkspace({ mode }: CameraWorkspaceProps) {
   if (mode === "recognize") {
     return (
       <AppShell>
+        <div className="mb-4 flex justify-center" role="group" aria-label="Detection mode">
+          {(["static", "dynamic"] as const).map((option) => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => setDetectionMode(option)}
+              aria-pressed={detectionMode === option}
+              className={`h-10 px-5 text-sm font-semibold first:rounded-l-md last:rounded-r-md ${
+                detectionMode === option ? "bg-teal text-white" : "border border-line bg-white text-ink"
+              }`}
+            >
+              {option === "static" ? "Static signs" : "Dynamic signs"}
+            </button>
+          ))}
+        </div>
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_430px]">
           <section className="rounded-lg border border-line bg-white p-4 shadow-soft">
             <CameraTracker autoStart mirror={mirror} overlay={overlay} onSnapshot={setSnapshot} />
           </section>
 
-          <section className="flex min-h-[360px] flex-col items-center justify-center rounded-lg border border-line bg-white p-8 text-center shadow-soft">
-            <p className="text-base font-semibold uppercase tracking-wide text-slate-500">{predictedSign.type}</p>
-            <p
-              data-testid="predicted-sign-value"
-              className={`mt-4 font-bold leading-none text-ink ${
-                predictedSign.value === "Unknown" ? "text-5xl sm:text-6xl" : "text-8xl sm:text-9xl"
-              }`}
-            >
-              {predictedSign.value}
-            </p>
+          <section className="flex min-h-[360px] flex-col rounded-lg border border-line bg-white p-6 shadow-soft">
+            {/* Prediction state indicator */}
+            <div className="flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{predictedSign.type}</p>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-medium ${
+                  recognition.state === "confirmed"
+                    ? "bg-emerald-50 text-emerald-700"
+                    : recognition.state === "uncertain"
+                      ? "bg-amber-50 text-amber-700"
+                      : "bg-slate-50 text-slate-500"
+                }`}
+              >
+                <span
+                  className={`inline-block h-1.5 w-1.5 rounded-full ${
+                    recognition.state === "confirmed"
+                      ? "bg-emerald-500"
+                      : recognition.state === "uncertain"
+                        ? "bg-amber-500"
+                        : "bg-slate-400"
+                  }`}
+                />
+                {recognition.state === "confirmed"
+                  ? "Confirmed"
+                  : recognition.state === "uncertain"
+                    ? "Uncertain"
+                    : "Waiting"}
+              </span>
+            </div>
+
+            {/* Main predicted sign */}
+            <div className="mt-4 flex flex-1 flex-col items-center justify-center">
+              <p
+                data-testid="predicted-sign-value"
+                className={`font-bold leading-none ${
+                  predictedSign.value === "Unknown" ? "text-5xl sm:text-6xl text-slate-400" : "text-7xl sm:text-8xl text-ink"
+                }`}
+              >
+                {predictedSign.value}
+              </p>
+
+              {/* Confidence bar for top prediction */}
+              {recognition.topPredictions.length > 0 && (
+                <div className="mt-4 w-full max-w-[200px]">
+                  <div className="h-2 w-full overflow-hidden rounded-full bg-slate-100">
+                    <div
+                      className={`h-full rounded-full transition-all duration-200 ${
+                        recognition.state === "confirmed"
+                          ? "bg-emerald-500"
+                          : recognition.state === "uncertain"
+                            ? "bg-amber-500"
+                            : "bg-slate-300"
+                      }`}
+                      style={{ width: `${Math.round(recognition.confidence * 100)}%` }}
+                    />
+                  </div>
+                  <p className="mt-1 text-center text-xs text-slate-500">
+                    {Math.round(recognition.confidence * 100)}% confidence
+                  </p>
+                </div>
+              )}
+
+              {/* Stable frame progress for recognition */}
+              {recognition.stableFrameCount > 0 && recognition.state !== "confirmed" && (
+                <p className="mt-2 text-xs text-slate-400">
+                  Hold stable ({recognition.stableFrameCount}/{requiredStableFrames})
+                </p>
+              )}
+            </div>
+
+            {/* Quality indicators */}
+            <div className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-100 pt-4">
+              <div className="flex flex-col items-center gap-1">
+                <span className={insideGuideFrame ? "text-emerald-500" : "text-slate-400"}>
+                  {insideGuideFrame ? "✓" : "○"}
+                </span>
+                <span className="text-[10px] font-medium text-slate-500">Guide</span>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <span className={steady ? "text-emerald-500" : "text-slate-400"}>
+                  {steady ? "✓" : "○"}
+                </span>
+                <span className="text-[10px] font-medium text-slate-500">Steady</span>
+              </div>
+              <div className="flex flex-col items-center gap-1">
+                <span className={snapshot ? "text-emerald-500" : "text-slate-400"}>
+                  {snapshot ? "✓" : "○"}
+                </span>
+                <span className="text-[10px] font-medium text-slate-500">Hand</span>
+              </div>
+            </div>
+
+            {/* Top-3 predictions mini chart */}
+            {recognition.topPredictions.length > 1 && (
+              <div className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Top candidates</p>
+                {recognition.topPredictions.slice(0, 3).map((prediction, index) => (
+                  <div key={prediction.label} className="flex items-center gap-2">
+                    <span className="w-6 text-right text-[11px] font-medium text-slate-600">
+                      {index === 0 ? "1st" : index === 1 ? "2nd" : "3rd"}
+                    </span>
+                    <div className="flex flex-1 items-center gap-2">
+                      <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-slate-100">
+                        <div
+                          className="h-full rounded-full bg-teal/60 transition-all duration-200"
+                          style={{ width: `${Math.round(prediction.confidence * 100)}%` }}
+                        />
+                      </div>
+                      <span className="w-8 text-right text-[11px] font-medium text-slate-500">
+                        {Math.round(prediction.confidence * 100)}%
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
         </div>
       </AppShell>

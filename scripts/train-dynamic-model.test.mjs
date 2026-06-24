@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { createUsableDynamicSamples, normalizeDynamicSequence, predictNearestSequence } from "./train-dynamic-model.mjs";
 
+// Feature sizes — keep in sync with train-dynamic-model.mjs
+const VALUES_PER_LANDMARK = 3;
+const FINGER_FEATURE_COUNT = 9;
+const LOCATION_FEATURE_COUNT = 3;
+const FEATURES_PER_HAND = 21 * VALUES_PER_LANDMARK + FINGER_FEATURE_COUNT + LOCATION_FEATURE_COUNT; // 75
+const DELTAS_PER_HAND = 21 * VALUES_PER_LANDMARK; // 63
+
 const hand = (offset) =>
   Array.from({ length: 21 }, (_, index) => ({
     x: offset + index * 0.01,
@@ -28,7 +35,9 @@ describe("train-dynamic-model helpers", () => {
 
     expect(samples).toHaveLength(1);
     expect(samples[0].signLabel).toBe("alphabet_J");
-    expect(samples[0].vector).toHaveLength(30 * 21 * 3 * 2);
+    // Each frame: FEATURES_PER_HAND (normalized) + DELTAS_PER_HAND (raw deltas)
+    // Default targetFrameCount = 30
+    expect(samples[0].vector).toHaveLength(30 * (FEATURES_PER_HAND + DELTAS_PER_HAND));
   });
 
   it("predicts the nearest normalized sequence with matching hand count", () => {

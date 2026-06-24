@@ -2,19 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Camera, Loader2 } from "lucide-react";
+import { LandmarkExtractor, type LandmarkSnapshot } from "@/lib/landmark-extractor";
+import type { NormalizedLandmark } from "@/lib/landmarks";
 
-type NormalizedLandmark = {
-  x: number;
-  y: number;
-  z?: number;
-};
-
-export type LandmarkSnapshot = {
-  landmarks: NormalizedLandmark[][];
-  handCount: number;
-  handedness: string[];
-  confidence: number;
-};
+export type { LandmarkSnapshot } from "@/lib/landmark-extractor";
 
 type CameraTrackerProps = {
   autoStart?: boolean;
@@ -30,6 +21,7 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
   const rafRef = useRef<number | null>(null);
   const startingRef = useRef(false);
   const startRequestRef = useRef(0);
+  const extractorRef = useRef<LandmarkExtractor | null>(null);
   const [status, setStatus] = useState("Camera is off.");
   const [running, setRunning] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -54,24 +46,13 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
     setStatus("Loading hand landmark model...");
 
     try {
-      const [{ FilesetResolver, HandLandmarker }] = await Promise.all([import("@mediapipe/tasks-vision")]);
-      const vision = await FilesetResolver.forVisionTasks(
-        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22-rc.20250304/wasm",
-      );
-      const handLandmarker = await HandLandmarker.createFromOptions(vision, {
-        baseOptions: {
-          modelAssetPath:
-            "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
-          delegate: "GPU",
-        },
-        runningMode: "VIDEO",
-        numHands: 2,
-        minHandDetectionConfidence: 0.6,
-        minHandPresenceConfidence: 0.6,
-        minTrackingConfidence: 0.6,
-      });
+      const extractor = new LandmarkExtractor();
+      await extractor.load();
+      extractorRef.current = extractor;
 
       if (startRequestRef.current !== requestId) {
+        extractor.close();
+        extractorRef.current = null;
         return;
       }
 
@@ -79,6 +60,8 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
 
       if (startRequestRef.current !== requestId) {
         stream.getTracks().forEach((track) => track.stop());
+        extractor.close();
+        extractorRef.current = null;
         return;
       }
 
@@ -110,28 +93,18 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
         context.drawImage(video, 0, 0, canvas.width, canvas.height);
         context.restore();
 
-        const result = handLandmarker.detectForVideo(video, performance.now());
-        const handedness = result.handednesses.map((group) => group[0]?.categoryName ?? "unknown");
-        const confidence =
-          result.handednesses.length > 0
-            ? result.handednesses.reduce((sum, group) => sum + (group[0]?.score ?? 0), 0) / result.handednesses.length
-            : 0;
+        const snapshot = extractor.detect(video, performance.now());
 
-        if (overlay && result.landmarks.length > 0) {
-          drawLandmarks(context, result.landmarks, canvas.width, canvas.height, mirror);
+        if (overlay && snapshot) {
+          drawLandmarks(context, snapshot.landmarks, canvas.width, canvas.height, mirror);
         }
 
-        if (result.landmarks.length === 0) {
+        if (!snapshot) {
           setStatus("Place your hand inside the camera frame.");
           onSnapshot(null);
         } else {
-          setStatus(`${result.landmarks.length} hand(s) detected.`);
-          onSnapshot({
-            landmarks: result.landmarks,
-            handCount: result.landmarks.length,
-            handedness,
-            confidence,
-          });
+          setStatus(`${snapshot.handCount} hand(s) detected.`);
+          onSnapshot(snapshot);
         }
 
         rafRef.current = requestAnimationFrame(drawFrame);
@@ -144,6 +117,8 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
       }
 
       startingRef.current = false;
+      extractorRef.current?.close();
+      extractorRef.current = null;
       setLoading(false);
       setRunning(false);
       setStatus(error instanceof Error ? error.message : "Unable to start camera.");
@@ -158,6 +133,8 @@ export function CameraTracker({ autoStart = false, mirror, overlay, onSnapshot }
 
     streamRef.current?.getTracks().forEach((track) => track.stop());
     streamRef.current = null;
+    extractorRef.current?.close();
+    extractorRef.current = null;
     startRequestRef.current += 1;
     startingRef.current = false;
     setRunning(false);

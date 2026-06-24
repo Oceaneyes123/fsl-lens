@@ -1,9 +1,57 @@
-import type { LandmarkFrame } from "./dynamic-landmarks";
+import { normalizeDynamicSequenceFrames, type LandmarkFrame } from "./dynamic-landmarks";
 
 export type RecordedDynamicFrame = {
   frame: LandmarkFrame;
   confidence: number;
 };
+
+export class SequenceBuffer {
+  private values: number[][] = [];
+
+  constructor(private readonly sequenceLength: number) {
+    if (sequenceLength <= 0) throw new Error("Sequence length must be positive.");
+  }
+
+  addFrame(features: number[]) {
+    this.values = [...this.values, [...features]].slice(-this.sequenceLength);
+  }
+
+  isReady() {
+    return this.values.length === this.sequenceLength;
+  }
+
+  getSequence() {
+    return this.values.map((features) => [...features]);
+  }
+
+  reset() {
+    this.values = [];
+  }
+}
+
+export class DynamicSequenceRecorder {
+  private recording: RecordedDynamicFrame[] = [];
+
+  constructor(private readonly sequenceLength: number) {}
+
+  addFrame(frame: LandmarkFrame, confidence: number) {
+    this.recording = [...this.recording, { frame, confidence }].slice(-this.sequenceLength);
+  }
+
+  getRawRecording() {
+    return [...this.recording];
+  }
+
+  getFeatureSequence() {
+    return normalizeDynamicSequenceFrames(this.recording.map((item) => item.frame), {
+      targetFrameCount: this.sequenceLength,
+    });
+  }
+
+  reset() {
+    this.recording = [];
+  }
+}
 
 export function createDynamicFrameBuffer({ maxFrames }: { maxFrames: number }) {
   let capturedFrames: LandmarkFrame[] = [];

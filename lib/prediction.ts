@@ -5,6 +5,12 @@ export type Prediction = {
 
 export type PredictionState = "confirmed" | "uncertain" | "unknown";
 
+export type SmoothedPrediction = {
+  label: string | null;
+  count: number;
+  stable: boolean;
+};
+
 export type PredictionEvaluation = {
   state: PredictionState;
   topPredictions: Prediction[];
@@ -29,18 +35,20 @@ export function distanceToConfidence(distance: number) {
 type PredictionConfig = {
   confirmThreshold?: number;
   uncertainThreshold?: number;
+  preserveOrder?: boolean;
 };
 
 export function evaluatePrediction({
   predictions,
   confirmThreshold = 0.8,
   uncertainThreshold = 0.6,
+  preserveOrder = false,
 }: {
   predictions: Prediction[];
 } & PredictionConfig): PredictionEvaluation {
   const seenLabels = new Set<string>();
   const topPredictions = [...predictions]
-    .sort((a, b) => b.confidence - a.confidence)
+    .sort((a, b) => preserveOrder ? 0 : b.confidence - a.confidence)
     .filter((prediction) => {
       if (seenLabels.has(prediction.label)) {
         return false;
@@ -76,29 +84,33 @@ export function evaluatePrediction({
 }
 
 export function createPredictionTracker({ requiredFrames = 5 }: { requiredFrames?: number } = {}) {
-  let currentLabel: string | null = null;
-  let count = 0;
+  const smoother = new PredictionSmoother({ confidenceThreshold: 0, stableCount: requiredFrames, historySize: requiredFrames });
 
   return {
     update(label: string | null) {
-      if (!label) {
-        currentLabel = null;
-        count = 0;
-        return { label: null, count, stable: false };
-      }
-
-      if (label === currentLabel) {
-        count += 1;
-      } else {
-        currentLabel = label;
-        count = 1;
-      }
-
-      return {
-        label,
-        count,
-        stable: count >= requiredFrames,
-      };
+      return smoother.update(label ? { label, confidence: 1 } : null);
     },
   };
+}
+
+export class PredictionSmoother {
+  private history: string[] = [];
+
+  constructor(private readonly config: { confidenceThreshold: number; stableCount: number; historySize: number }) {}
+
+  update(prediction: Prediction | null): SmoothedPrediction {
+    if (!prediction || prediction.confidence < this.config.confidenceThreshold) {
+      this.reset();
+      return { label: null, count: 0, stable: false };
+    }
+
+    this.history = [...this.history, prediction.label].slice(-this.config.historySize);
+    let count = 0;
+    for (let index = this.history.length - 1; index >= 0 && this.history[index] === prediction.label; index -= 1) count += 1;
+    return { label: prediction.label, count, stable: count >= this.config.stableCount };
+  }
+
+  reset() {
+    this.history = [];
+  }
 }

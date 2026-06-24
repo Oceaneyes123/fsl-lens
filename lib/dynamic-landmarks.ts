@@ -1,4 +1,4 @@
-import { normalizeLandmarks, type NormalizedLandmark } from "./landmarks";
+import { normalizeLandmarks, orderHands, type NormalizedLandmark } from "./landmarks";
 
 export type LandmarkFrame = NormalizedLandmark[][];
 
@@ -25,16 +25,19 @@ export function normalizeDynamicSequence(
   frames: LandmarkFrame[],
   { targetFrameCount = dynamicSequenceDefaults.targetFrameCount }: { targetFrameCount?: number } = {},
 ) {
-  const resampledFrames = resampleLandmarkFrames(frames, targetFrameCount);
+  return normalizeDynamicSequenceFrames(frames, { targetFrameCount }).flat();
+}
 
-  if (resampledFrames.length === 0) {
-    return [];
-  }
-
-  return resampledFrames.flatMap((frame, frameIndex) => {
+/** Returns model-ready features shaped as sequence_length x feature_count. */
+export function normalizeDynamicSequenceFrames(
+  frames: LandmarkFrame[],
+  { targetFrameCount = frames.length }: { targetFrameCount?: number } = {},
+) {
+  const resampledFrames = resampleLandmarkFrames(frames.map(orderHands), targetFrameCount);
+  return resampledFrames.map((frame, frameIndex) => {
     const normalized = normalizeLandmarks(frame);
     const previousFrame = frameIndex === 0 ? null : resampledFrames[frameIndex - 1];
-    const deltas = previousFrame ? calculateFrameDeltas(previousFrame, frame) : Array(normalized.length).fill(0);
+    const deltas = previousFrame ? calculateFrameDeltas(previousFrame, frame) : Array(3 * 21 * frame.length).fill(0);
     return [...normalized, ...deltas];
   });
 }

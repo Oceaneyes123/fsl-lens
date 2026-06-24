@@ -4,6 +4,7 @@ import type { Prediction } from "./prediction";
 import type { DynamicSequenceModel } from "./dynamic-recognition";
 import type { KnnModel } from "./recognition";
 import { signs } from "./signs";
+import { detectionSettings } from "./detection-config";
 
 type SampleInsert = {
   sign_id: string;
@@ -578,16 +579,16 @@ export async function loadAdminData({
 }
 
 async function loadFallbackModel(reason: string) {
-  return fetchModelJson("/models/active-knn-model.json", `${reason} Loaded fallback model.`).catch(() => ({
+  return fetchModelJson(detectionSettings.staticModelPath, `${reason} Loaded fallback model.`).catch(() => ({
     model: null,
-    message: `${reason} No fallback model was found at /models/active-knn-model.json.`,
+    message: `${reason} No fallback model was found at ${detectionSettings.staticModelPath}.`,
   }));
 }
 
 async function loadFallbackDynamicModel(reason: string) {
-  return fetchDynamicModelJson("/models/active-dynamic-model.json", `${reason} Loaded fallback dynamic model.`).catch(() => ({
+  return fetchDynamicModelJson(detectionSettings.dynamicModelPath, `${reason} Loaded fallback dynamic model.`).catch(() => ({
     model: null,
-    message: `${reason} No fallback dynamic model was found at /models/active-dynamic-model.json.`,
+    message: `${reason} No fallback dynamic model was found at ${detectionSettings.dynamicModelPath}.`,
   }));
 }
 

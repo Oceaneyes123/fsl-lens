@@ -2,15 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createClient } from "@supabase/supabase-js";
-import { readEnvFile } from "./train-knn-model.mjs";
+import { readEnvFile, predictWeightedKnn, computeFingerFeatures, computeLocationFeatures, orderHands } from "./train-knn-model.mjs";
 
 const defaultModelPath = path.join("public", "models", "active-dynamic-model.json");
 const defaultReportPath = path.join("output", "dynamic-training-report.json");
 const defaultEnvPath = ".env.local";
 const defaultTargetFrameCount = 30;
+const K_NEIGHBORS = 3;
+
+// Feature sizes — shared with train-knn-model.mjs / lib/landmarks.ts
+const VALUES_PER_LANDMARK = 3;
+const FINGER_FEATURE_COUNT = 9;
+const LOCATION_FEATURE_COUNT = 3;
+const FEATURES_PER_HAND = 21 * VALUES_PER_LANDMARK + FINGER_FEATURE_COUNT + LOCATION_FEATURE_COUNT; // 75
+const FEATURE_VERSION = 4;
 
 export function normalizeDynamicSequence(frames, { targetFrameCount = defaultTargetFrameCount } = {}) {
-  const resampledFrames = resampleLandmarkFrames(frames, targetFrameCount);
+  const resampledFrames = resampleLandmarkFrames(frames.map(orderHands), targetFrameCount);
 
   if (resampledFrames.length === 0) {
     return [];
@@ -19,21 +27,15 @@ export function normalizeDynamicSequence(frames, { targetFrameCount = defaultTar
   return resampledFrames.flatMap((frame, frameIndex) => {
     const normalized = normalizeLandmarks(frame);
     const previousFrame = frameIndex === 0 ? null : resampledFrames[frameIndex - 1];
-    const deltas = previousFrame ? calculateFrameDeltas(previousFrame, frame) : Array(normalized.length).fill(0);
+    const deltas = previousFrame ? calculateFrameDeltas(previousFrame, frame) : Array(3 * 21 * frame.length).fill(0);
     return [...normalized, ...deltas];
   });
 }
 
+// Keep old function signature for backward-compat test imports
 export function predictNearestSequence(samples, target, excludeId = null) {
-  return (
-    samples
-      .filter(
-        (sample) =>
-          sample.id !== excludeId && sample.handCount === target.handCount && sample.vector.length === target.vector.length,
-      )
-      .map((sample) => ({ label: sample.signLabel, distance: distance(sample.vector, target.vector) }))
-      .sort((a, b) => a.distance - b.distance)[0] ?? null
-  );
+  const result = predictWeightedKnn(samples, target, { excludeId });
+  return result ? { label: result.label, distance: result.distance } : null;
 }
 
 export function createUsableDynamicSamples(rows, { targetFrameCount = defaultTargetFrameCount } = {}) {
@@ -51,7 +53,7 @@ export function createUsableDynamicSamples(rows, { targetFrameCount = defaultTar
       reviewStatus: row.review_status,
       detectorConfidence: Number(row.detector_confidence),
     }))
-    .filter((sample) => sample.vector.length === targetFrameCount * sample.handCount * 21 * 3 * 2);
+    .filter((sample) => sample.vector.length === targetFrameCount * sample.handCount * (FEATURES_PER_HAND + 21 * VALUES_PER_LANDMARK));
 }
 
 export async function trainDynamicModel({
@@ -96,7 +98,7 @@ export async function trainDynamicModel({
 }
 
 function normalizeLandmarks(hands) {
-  return hands.flatMap((hand) => normalizeHand(hand));
+  return hands.flatMap((hand) => [...normalizeHand(hand), ...computeFingerFeatures(hand), ...computeLocationFeatures(hand)]);
 }
 
 function normalizeHand(hand) {
@@ -141,20 +143,10 @@ function calculateFrameDeltas(previousFrame, frame) {
   );
 }
 
-function distance(left, right) {
-  let sum = 0;
-
-  for (let index = 0; index < left.length; index += 1) {
-    const delta = left[index] - right[index];
-    sum += delta * delta;
-  }
-
-  return Math.sqrt(sum / left.length);
-}
-
 function createModel(samples, { targetFrameCount }) {
   return {
     versionName: `local-dynamic-knn-${new Date().toISOString().slice(0, 10)}`,
+    featureVersion: FEATURE_VERSION,
     modelType: "dynamic_sequence_knn",
     thresholdConfig: {
       confirmThreshold: 0.8,
@@ -178,7 +170,7 @@ function createTrainingReport({ samples, train, test, modelPath }) {
   const confusion = {};
 
   for (const sample of samples) {
-    const result = predictNearestSequence(samples, sample, sample.id);
+    const result = predictWeightedKnn(samples, sample, { excludeId: sample.id });
     const predicted = result?.label ?? "none";
 
     confusion[sample.signLabel] ??= {};
@@ -192,7 +184,7 @@ function createTrainingReport({ samples, train, test, modelPath }) {
   let splitCorrect = 0;
 
   for (const sample of test) {
-    const result = predictNearestSequence(train, sample);
+    const result = predictWeightedKnn(train, sample);
 
     if (result?.label === sample.signLabel) {
       splitCorrect += 1;
@@ -216,7 +208,7 @@ function createTrainingReport({ samples, train, test, modelPath }) {
       labelsCovered: Object.keys(countsByLabel).sort(),
     },
     validation: {
-      method: "1-nearest-neighbor over normalized landmark sequences with frame deltas",
+      method: `Weighted k-NN (k=${K_NEIGHBORS}) over landmark sequences with finger shape, wrist location, and frame deltas`,
       leaveOneOut: {
         correct: leaveOneOutCorrect,
         total: samples.length,
@@ -230,7 +222,6 @@ function createTrainingReport({ samples, train, test, modelPath }) {
       },
       confusion,
       caveats: [
-        "This baseline is browser-exportable and should be replaced by LSTM/GRU or Temporal CNN after enough signer-diverse clips exist.",
         "No signer-based split is possible without signer metadata.",
       ],
     },
