@@ -4,9 +4,21 @@ import { normalizeDynamicSequence, normalizeDynamicSequenceFrames, type Landmark
 import { DynamicSequenceRecorder, SequenceBuffer } from "./dynamic-capture";
 import { DynamicSequenceClassifier, type DynamicSequenceModel } from "./dynamic-recognition";
 import { featureVersion, normalizeLandmarks, type NormalizedLandmark } from "./landmarks";
+import { featureVersion as extractedFeatureVersion } from "./features/feature-version";
+import { normalizeLandmarks as extractedNormalizeLandmarks } from "./features/static-landmark-features";
+import { normalizeDynamicSequenceFrames as extractedDynamicFrames } from "./features/dynamic-sequence-features";
 import { PredictionSmoother } from "./prediction";
 import { StaticKNNClassifier, type KnnModel } from "./recognition";
 import { DetectionModeRouter } from "./recognize-mode-recognition";
+import { DetectionModeRouter as ExtractedDetectionModeRouter } from "./detection/detection-mode-router";
+import { detectionSettings as extractedDetectionSettings } from "./detection/detection-config";
+import { createClassifier } from "./classifiers/classifier-registry";
+import { DynamicNeuralClassifier } from "./classifiers/dynamic-neural-classifier";
+import { DynamicSequenceKNNClassifier } from "./classifiers/dynamic-sequence-knn-classifier";
+import { StaticKNNClassifier as ExtractedStaticKNNClassifier } from "./classifiers/static-knn-classifier";
+import { validateSampleQuality as extractedValidateSampleQuality } from "./dataset/sample-quality";
+import { loadRecognitionModel as extractedLoadRecognitionModel } from "./models/model-loader";
+import { loadRecognitionModel as legacyLoadRecognitionModel } from "./supabase";
 
 const hand = (offset = 0): NormalizedLandmark[] =>
   Array.from({ length: 21 }, (_, index) => ({
@@ -37,6 +49,12 @@ function dynamicModel(frames: LandmarkFrame[]): DynamicSequenceModel {
 }
 
 describe("landmark extraction boundary", () => {
+  it("exposes compatible static and dynamic feature modules", () => {
+    const frames = [[hand(0)], [hand(0.2)]];
+    expect(extractedFeatureVersion).toBe(featureVersion);
+    expect(extractedNormalizeLandmarks(frames[0])).toEqual(normalizeLandmarks(frames[0]));
+    expect(extractedDynamicFrames(frames)).toEqual(normalizeDynamicSequenceFrames(frames));
+  });
   it("zero-fills incomplete detected hands to 21 landmarks", () => {
     const hands = normalizeDetectedHands([[{ x: 0.1, y: 0.2, z: 0.3 }]]);
 
@@ -48,6 +66,33 @@ describe("landmark extraction boundary", () => {
 });
 
 describe("classifier adapters", () => {
+  it("creates classifiers for every supported model type", () => {
+    expect(createClassifier("static_knn")).toBeInstanceOf(ExtractedStaticKNNClassifier);
+    expect(createClassifier("dynamic_sequence_knn")).toBeInstanceOf(DynamicSequenceKNNClassifier);
+    expect(createClassifier("dynamic_lstm")).toBeInstanceOf(DynamicNeuralClassifier);
+    expect(createClassifier("dynamic_bilstm")).toBeInstanceOf(DynamicNeuralClassifier);
+    expect(createClassifier("dynamic_transformer")).toBeInstanceOf(DynamicNeuralClassifier);
+  });
+
+  it("returns no_model for future neural classifiers", () => {
+    const classifier = createClassifier("dynamic_lstm");
+
+    expect(classifier.predict({ kind: "dynamic", sequence: [[1, 2]], handCount: 1, targetFrameCount: 1 })).toMatchObject({
+      state: "no_model",
+      predictedLabel: null,
+    });
+  });
+
+  it("preserves sequence-shaped input until dynamic KNN prediction", () => {
+    const frames = [[hand(0)], [hand(0.2)]];
+    const classifier = new DynamicSequenceKNNClassifier();
+    classifier.loadModel(dynamicModel(frames));
+    const sequence = normalizeDynamicSequenceFrames(frames);
+
+    expect(classifier.predict({ kind: "dynamic", sequence, handCount: 1, targetFrameCount: 2 }).predictedLabel).toBe("alphabet_J");
+    expect(sequence).toHaveLength(2);
+  });
+
   it("preserves static KNN predictions from normalized frame features", () => {
     const classifier = new StaticKNNClassifier();
     classifier.loadModel(staticModel);
@@ -61,6 +106,13 @@ describe("classifier adapters", () => {
     classifier.loadModel(dynamicModel(frames));
 
     expect(classifier.predict(normalizeDynamicSequenceFrames(frames), 1).predictedLabel).toBe("alphabet_J");
+  });
+});
+
+describe("model and dataset boundaries", () => {
+  it("keeps model loading and sample quality compatibility entry points aligned", () => {
+    expect(extractedLoadRecognitionModel).toBe(legacyLoadRecognitionModel);
+    expect(extractedValidateSampleQuality({ detectedHandCount: 1, expectedHandCount: 1, detectorConfidence: 1, landmarksVisible: true, insideGuideFrame: true, steady: true }).status).toBe("clean");
   });
 });
 
@@ -104,6 +156,10 @@ describe("DynamicSequenceRecorder", () => {
 });
 
 describe("DetectionModeRouter", () => {
+  it("keeps new and compatibility entry points aligned", () => {
+    expect(ExtractedDetectionModeRouter).toBe(DetectionModeRouter);
+    expect(extractedDetectionSettings.defaultMode).toBe("static");
+  });
   it("runs only the selected pipeline and resets dynamic readiness on mode changes", () => {
     const frames = [[hand(0)], [hand(0.2)]];
     const router = new DetectionModeRouter({ sequenceLength: 2 });
