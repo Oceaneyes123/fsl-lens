@@ -99,7 +99,7 @@ export function formatPredictedSign(label: string | null): { value: string; type
   };
 }
 
-export function formatPredictedSigns(predictions: Prediction[], minimumConfidence = 0.95): { value: string; type: string } {
+export function formatPredictedSigns(predictions: Prediction[], minimumConfidence = 0.9): { value: string; type: string } {
   const confidentPredictions = predictions
     .filter((prediction) => prediction.confidence >= minimumConfidence)
     .sort((a, b) => b.confidence - a.confidence);

@@ -57,30 +57,37 @@ describe("formatPredictedSign", () => {
 });
 
 describe("formatPredictedSigns", () => {
-  it("returns unknown when the best prediction is below the display confidence threshold", () => {
-    expect(formatPredictedSigns([{ label: "alphabet_A", confidence: 0.949 }])).toEqual({
+  it("returns unknown when the best prediction is below 90% confidence", () => {
+    expect(formatPredictedSigns([{ label: "alphabet_A", confidence: 0.899 }])).toEqual({
       value: "Unknown",
       type: "Predicted sign",
     });
   });
 
-  it("shows a single sign when it passes the display confidence threshold", () => {
-    expect(formatPredictedSigns([{ label: "alphabet_A", confidence: 0.95 }])).toEqual({
+  it("shows a single sign at 90% confidence", () => {
+    expect(formatPredictedSigns([{ label: "alphabet_A", confidence: 0.9 }])).toEqual({
       value: "A",
       type: "Alphabet",
     });
   });
 
-  it("shows both alphabet and number predictions when both pass the display confidence threshold", () => {
+  it("shows both alphabet and number predictions when both pass 90% confidence", () => {
     expect(
       formatPredictedSigns([
         { label: "alphabet_A", confidence: 0.97 },
         { label: "number_4", confidence: 0.96 },
-        { label: "alphabet_B", confidence: 0.95 },
+        { label: "alphabet_B", confidence: 0.9 },
       ]),
     ).toEqual({
       value: "A / 4",
       type: "Predicted signs",
+    });
+  });
+
+  it("keeps the caller-provided display confidence threshold", () => {
+    expect(formatPredictedSigns([{ label: "alphabet_A", confidence: 0.94 }], 0.95)).toEqual({
+      value: "Unknown",
+      type: "Predicted sign",
     });
   });
 });
